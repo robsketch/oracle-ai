@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Oracle DBA Assistant</title>
+<script src="/static/marked.min.js"></script>
+<script src="/static/purify.min.js"></script>
+<style>
+:root {
+  --bg: #f5f6f8; --panel: #ffffff; --ink: #1d2330; --muted: #5d6677; --line: #e1e4ea;
+  --accent: #c74634; --accent-ink: #ffffff; --soft: #f0f2f5; --code: #f3f4f7;
+  --ok: #1f8a4c; --warn: #b7791f; --crit: #c53030; --info: #2b6cb0;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.08);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12151b; --panel: #1a1e26; --ink: #e6e9ef; --muted: #9aa3b2; --line: #2b313d;
+    --accent: #e05a47; --soft: #222833; --code: #20252f; --shadow: none;
+    --ok: #48bb78; --warn: #ecc94b; --crit: #fc8181; --info: #63b3ed;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+header { display: flex; align-items: center; gap: 14px; padding: 12px 20px;
+  background: var(--panel); border-bottom: 1px solid var(--line); }
+header h1 { font-size: 17px; margin: 0; font-weight: 650; }
+header .sub { color: var(--muted); font-size: 13px; }
+.logo { width: 30px; height: 30px; border-radius: 7px; background: var(--accent); color: #fff;
+  display: grid; place-items: center; font-weight: 700; font-size: 14px; }
+.spacer { flex: 1; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px;
+  background: var(--soft); font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.crit { background: var(--crit); }
+main { display: grid; grid-template-columns: 380px 1fr; gap: 16px; padding: 16px 20px;
+  height: calc(100vh - 57px); }
+@media (max-width: 900px) { main { grid-template-columns: 1fr; height: auto; } }
+.col { display: flex; flex-direction: column; gap: 16px; min-height: 0; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: var(--shadow); display: flex; flex-direction: column; min-height: 0; }
+.card > h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted);
+  margin: 0; padding: 12px 14px 8px; display: flex; align-items: center; gap: 8px; }
+.card .body { padding: 0 14px 14px; }
+.tabs { display: flex; gap: 4px; background: var(--soft); padding: 3px; border-radius: 8px; margin-bottom: 12px; }
+.tabs button { flex: 1; border: 0; background: transparent; padding: 6px 8px; border-radius: 6px;
+  color: var(--muted); font: inherit; cursor: pointer; }
+.tabs button.on { background: var(--panel); color: var(--ink); box-shadow: var(--shadow); font-weight: 600; }
+label { display: block; font-size: 12.5px; color: var(--muted); margin: 8px 0 4px; }
+select, input[type=text], textarea { width: 100%; padding: 7px 9px; border: 1px solid var(--line);
+  border-radius: 7px; background: var(--panel); color: var(--ink); font: inherit; }
+textarea { resize: vertical; min-height: 54px; }
+.row { display: flex; gap: 10px; } .row > div { flex: 1; }
+.btns { display: flex; gap: 8px; margin-top: 14px; }
+button.primary { flex: 1; background: var(--accent); color: var(--accent-ink); border: 0; padding: 9px 12px;
+  border-radius: 8px; font: inherit; font-weight: 600; cursor: pointer; }
+button.primary:disabled { opacity: .55; cursor: default; }
+button.ghost { background: transparent; border: 1px solid var(--line); color: var(--ink); padding: 8px 12px;
+  border-radius: 8px; font: inherit; cursor: pointer; }
+button.ghost:disabled { opacity: .5; cursor: default; }
+.hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+.upload { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+.upload input { font-size: 12px; color: var(--muted); }
+#activity { flex: 1; min-height: 160px; }
+#feed { overflow: auto; padding: 0 14px 14px; font-size: 12.5px; flex: 1; }
+.ev { display: grid; grid-template-columns: 42px 18px 1fr; gap: 6px; padding: 5px 0;
+  border-bottom: 1px dashed var(--line); }
+.ev:last-child { border-bottom: 0; }
+.ev .t { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
+.ev .i { text-align: center; }
+.ev .n { font-weight: 600; }
+.ev .d { color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px;
+  word-break: break-word; }
+.ev.err .n, .ev.err .d { color: var(--crit); }
+.ev.say .d { font-family: inherit; color: var(--ink); font-size: 12.5px; }
+.spinner { width: 12px; height: 12px; border: 2px solid var(--line); border-top-color: var(--accent);
+  border-radius: 50%; animation: spin .8s linear infinite; display: inline-block; }
+@keyframes spin { to { transform: rotate(360deg); } }
+#reports { max-height: 230px; }
+#reportList { overflow: auto; padding: 0 8px 10px; }
+.rep { display: flex; justify-content: space-between; gap: 8px; padding: 6px 8px; border-radius: 6px;
+  cursor: pointer; font-size: 12.5px; }
+.rep:hover, .rep.on { background: var(--soft); }
+.rep .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rep .st { white-space: nowrap; color: var(--muted); }
+#viewer { flex: 1; }
+#viewer .head { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+#viewer .head .tabs { margin: 0; flex: 0 0 auto; }
+#viewer .head .tabs button { flex: 0 0 auto; padding: 5px 14px; }
+#viewer .title { color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#doc { overflow: auto; padding: 8px 26px 30px; flex: 1; }
+.empty { color: var(--muted); text-align: center; padding: 60px 20px; }
+.empty .big { font-size: 34px; }
+.md h1 { font-size: 22px; margin: 18px 0 10px; } .md h2 { font-size: 17px; margin: 24px 0 8px;
+  padding-bottom: 4px; border-bottom: 1px solid var(--line); } .md h3 { font-size: 15px; }
+.md table { border-collapse: collapse; margin: 10px 0; font-size: 13px; display: block; overflow-x: auto; }
+.md th, .md td { border: 1px solid var(--line); padding: 6px 9px; text-align: left; vertical-align: top; }
+.md th { background: var(--soft); }
+.md code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+.md pre { background: var(--code); padding: 10px 12px; border-radius: 7px; overflow-x: auto; }
+.md pre code { background: none; padding: 0; }
+.md td.rag-crit { background: color-mix(in srgb, var(--crit) 12%, transparent); }
+.md td.rag-warn { background: color-mix(in srgb, var(--warn) 14%, transparent); }
+.md td.rag-ok { background: color-mix(in srgb, var(--ok) 10%, transparent); }
+.banner { margin: 14px 0 4px; padding: 10px 14px; border-radius: 8px; background: var(--soft);
+  display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); }
+.banner b { color: var(--ink); }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">DBA</div>
+  <div>
+    <h1>Oracle DBA Assistant</h1>
+    <div class="sub">Claude Code agent <code>awr-analyst</code> · read-only diagnostics over SQLcl MCP</div>
+  </div>
+  <div class="spacer"></div>
+  <span class="pill" id="dbPill"><span class="dot"></span><span>Database: checking…</span></span>
+</header>
+
+<main>
+  <div class="col">
+    <section class="card">
+      <h2>Run the agent</h2>
+      <div class="body">
+        <div class="tabs" id="modeTabs">
+          <button data-mode="live" class="on">Live database</button>
+          <button data-mode="file">Analyse a report file</button>
+        </div>
+        <div id="liveForm">
+          <div class="row">
+            <div><label for="days">Look-back window</label>
+              <select id="days"><option value="1">Last 24 hours</option><option value="3">Last 3 days</option>
+                <option value="7" selected>Last 7 days</option><option value="14">Last 14 days</option></select></div>
+            <div><label for="workload">Workload source</label>
+              <select id="workload"><option value="auto" selected>Auto (AWR on Free)</option>
+                <option value="awr">AWR</option><option value="statspack">Statspack</option></select></div>
+          </div>
+          <label for="focus">Anything to focus on? (optional)</label>
+          <textarea id="focus" placeholder="e.g. users reported slowness yesterday afternoon"></textarea>
+          <div class="hint">Reads the alert log, ADR incidents, trace files and AWR through the read-only
+            <code>c##dbmon</code> account. Starts the container first if it's down.</div>
+        </div>
+        <div id="fileForm" hidden>
+          <label for="file">AWR / Statspack report, alert log or trace file</label>
+          <select id="file"></select>
+          <div class="upload"><input type="file" id="upload" accept=".txt,.html,.htm,.log,.xml,.trc,.lst">
+            <span class="hint" id="upMsg"></span></div>
+          <div class="hint">File mode doesn't touch the database. The agent parses the file with
+            <code>extract_report.py</code> and rates what it finds.</div>
+        </div>
+        <div class="btns">
+          <button class="primary" id="runBtn">Run analysis</button>
+          <button class="ghost" id="stopBtn" disabled>Stop</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" id="activity">
+      <h2>Agent activity <span id="spin"></span><span class="spacer"></span><span id="elapsed" class="pill" hidden></span></h2>
+      <div id="feed"><div class="empty" style="padding:24px 0">No run yet.</div></div>
+    </section>
+
+    <section class="card" id="reports">
+      <h2>Reports</h2>
+      <div id="reportList"></div>
+    </section>
+  </div>
+
+  <section class="card" id="viewer">
+    <div class="head">
+      <div class="tabs" id="viewTabs">
+        <button data-view="summary" class="on">Agent summary</button>
+        <button data-view="report">Full report</button>
+      </div>
+      <span class="title" id="docTitle"></span>
+    </div>
+    <div id="doc"><div class="empty"><div class="big">🩺</div>
+      <p>Run the agent against the live database, or analyse an AWR report file.<br>
+      The agent's summary and the full RAG-rated report appear here.</p></div></div>
+  </section>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+let mode = "live", view = "summary", job = null, es = null, timer = null;
+let summaryMd = "", summaryMeta = null, reportName = null, reportMd = "";
+
+function md(text) {
+  const html = DOMPurify.sanitize(marked.parse(text || ""));
+  const div = document.createElement("div");
+  div.className = "md";
+  div.innerHTML = html;
+  div.querySelectorAll("td").forEach(td => {
+    const t = td.textContent;
+    if (/🔴|\bCRIT\b/.test(t)) td.classList.add("rag-crit");
+    else if (/🟡|🟠|\bWARN\b/.test(t)) td.classList.add("rag-warn");
+    else if (/🟢|^\s*OK\b/.test(t)) td.classList.add("rag-ok");
+  });
+  return div;
+}
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function render() {
+  const doc = $("#doc");
+  doc.innerHTML = "";
+  document.querySelectorAll("#viewTabs button").forEach(b => b.classList.toggle("on", b.dataset.view === view));
+  if (view === "summary") {
+    $("#docTitle").textContent = summaryMeta ? summaryMeta.label : "";
+    if (!summaryMd) {
+      doc.innerHTML = `<div class="empty"><div class="big">🩺</div><p>${job && !job.done
+        ? "The agent is working. Its summary will appear here when it finishes."
+        : "Run the agent to see its summary here, or pick a past report from the list."}</p></div>`;
+      return;
+    }
+    if (summaryMeta) {
+      const b = document.createElement("div");
+      b.className = "banner";
+      b.innerHTML = `<span>Run: <b>${esc(summaryMeta.label)}</b></span>` +
+        (summaryMeta.duration != null ? `<span>Time: <b>${summaryMeta.duration}s</b></span>` : "") +
+        (summaryMeta.turns != null ? `<span>Turns: <b>${summaryMeta.turns}</b></span>` : "") +
+        (summaryMeta.cost != null ? `<span>Cost: <b>$${summaryMeta.cost.toFixed(2)}</b></span>` : "") +
+        (summaryMeta.report ? `<span>Report: <b>${esc(summaryMeta.report)}</b></span>` : "");
+      doc.appendChild(b);
+    }
+    doc.appendChild(md(summaryMd));
+  } else {
+    $("#docTitle").textContent = reportName || "";
+    if (!reportMd) { doc.innerHTML = `<div class="empty"><p>No report selected.</p></div>`; return; }
+    doc.appendChild(md(reportMd));
+  }
+  doc.scrollTop = 0;
+}
+
+async function loadReport(name, switchView = true) {
+  const r = await fetch("/api/report?name=" + encodeURIComponent(name));
+  if (!r.ok) return;
+  const j = await r.json();
+  reportName = j.name; reportMd = j.markdown;
+  if (switchView) view = "report";
+  render(); refresh();
+}
+
+async function refresh() {
+  const s = await (await fetch("/api/state")).json();
+  const db = s.db, pill = $("#dbPill");
+  const cls = db.state === "running" ? (db.health === "healthy" ? "ok" : "warn") : (db.state === "unknown" ? "crit" : "warn");
+  const txt = db.state === "running" ? `running${db.health ? " · " + db.health : ""}`
+    : db.state === "unknown" ? "docker unavailable" : `${db.state} (agent will start it)`;
+  pill.innerHTML = `<span class="dot ${cls}"></span><span>oracle-free: ${esc(txt)}</span>`;
+  pill.title = db.detail || "";
+
+  const list = $("#reportList");
+  list.innerHTML = s.reports.length ? "" : `<div class="hint" style="padding:6px 8px">No reports yet.</div>`;
+  s.reports.forEach(r => {
+    const d = document.createElement("div");
+    d.className = "rep" + (r.name === reportName ? " on" : "");
+    const when = new Date(r.mtime * 1000).toLocaleString([], {month: "short", day: "numeric", hour: "2-digit", minute: "2-digit"});
+    d.innerHTML = `<span class="nm" title="${esc(r.name)}">${r.kind === "diag" ? "🔎" : "🩺"} ${esc(r.name.replace(/\.md$/, ""))}</span>
+      <span class="st">${esc(r.status)} · ${when}</span>`;
+    d.onclick = () => loadReport(r.name);
+    list.appendChild(d);
+  });
+
+  const sel = $("#file"), prev = sel.value;
+  sel.innerHTML = s.files.map(f => `<option value="${esc(f.path)}">${esc(f.path)} (${(f.size / 1024).toFixed(0)} KB)</option>`).join("")
+    || `<option value="">No files yet: upload one</option>`;
+  if (prev && s.files.some(f => f.path === prev)) sel.value = prev;
+
+  if (s.job && !s.job.done && !es) attach(s.job.id, s.job.label);
+  return s;
+}
+
+const ICON = { "Bash": "⚙️", "Read": "📄", "Write": "📝", "sqlcl.connect": "🔌", "sqlcl.disconnect": "🔌",
+  "sqlcl.sql_run": "🗄️", "sqlcl.connections_list": "🔌" };
+
+
+function addEv(t, icon, name, detail, cls = "") {
+  const feed = $("#feed");
+  if (feed.querySelector(".empty")) feed.innerHTML = "";
+  const d = document.createElement("div");
+  d.className = "ev " + cls;
+  d.innerHTML = `<span class="t">${t != null ? t.toFixed(0) + "s" : ""}</span><span class="i">${icon}</span>
+    <span><span class="n">${esc(name)}</span>${detail ? `<div class="d">${esc(detail)}</div>` : ""}</span>`;
+  const stick = feed.scrollTop + feed.clientHeight >= feed.scrollHeight - 30;
+  feed.appendChild(d);
+  if (stick) feed.scrollTop = feed.scrollHeight;
+  return d;
+}
+
+function setRunning(on) {
+  $("#runBtn").disabled = on; $("#stopBtn").disabled = !on;
+  $("#runBtn").textContent = on ? "Running…" : "Run analysis";
+  $("#spin").innerHTML = on ? '<span class="spinner"></span>' : "";
+  clearInterval(timer);
+  const el = $("#elapsed");
+  if (on) {
+    const t0 = Date.now(); el.hidden = false;
+    timer = setInterval(() => { const s = Math.round((Date.now() - t0) / 1000);
+      el.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; }, 1000);
+  }
+}
+
+function attach(id, label) {
+  job = { id, label, done: false };
+  setRunning(true);
+  es = new EventSource(`/api/jobs/${id}/events`);
+  es.onmessage = m => {
+    const e = JSON.parse(m.data);
+    switch (e.kind) {
+      case "start": $("#feed").innerHTML = ""; addEv(e.t, "▶️", e.label, e.prompt); break;
+      case "init": addEv(e.t, e.sqlcl === "connected" ? "✅" : "⚠️", "Agent started",
+        `model ${e.model} · SQLcl MCP ${e.sqlcl}`, e.sqlcl === "connected" ? "" : "err"); break;
+      case "tool": addEv(e.t, ICON[e.name] || "🔧", e.name, e.detail); break;
+      case "tool_result":
+        if (e.error) addEv(e.t, "⛔", (e.name || "tool") + " blocked / failed", e.preview, "err");
+        break;
+      case "text": addEv(e.t, "💬", "Agent", e.text.length > 400 ? e.text.slice(0, 400) + "…" : e.text, "say"); break;
+      case "done":
+        addEv(e.t, e.ok ? "🏁" : "⚠️", e.ok ? "Finished" : "Finished with problems: " + e.subtype,
+          e.report ? "Report: reports/" + e.report : "");
+        summaryMd = e.result; summaryMeta = { label, ...e }; view = "summary";
+        if (e.report) loadReport(e.report, false); else render();
+        break;
+      case "error": addEv(e.t, "❌", "Error", e.text, "err"); break;
+    }
+  };
+  es.addEventListener("end", () => { es.close(); es = null; job.done = true; setRunning(false); refresh(); render(); });
+  es.onerror = () => { if (es && es.readyState === 2) { es = null; setRunning(false); } };
+  summaryMd = ""; summaryMeta = { label }; view = "summary"; render();
+}
+
+$("#runBtn").onclick = async () => {
+  const body = mode === "live"
+    ? { mode, days: +$("#days").value, workload: $("#workload").value, focus: $("#focus").value }
+    : { mode, path: $("#file").value };
+  if (mode === "file" && !body.path) return alert("Upload or choose a file first.");
+  const r = await fetch("/api/run", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body) });
+  const j = await r.json();
+  if (!r.ok) return alert(j.error || "Could not start the run");
+  const label = mode === "live" ? `Live review · last ${body.days}d · ${body.workload}` : `File · ${body.path.split("/").pop()}`;
+  attach(j.id, label);
+};
+$("#stopBtn").onclick = () => fetch("/api/stop", { method: "POST" });
+
+document.querySelectorAll("#modeTabs button").forEach(b => b.onclick = () => {
+  mode = b.dataset.mode;
+  document.querySelectorAll("#modeTabs button").forEach(x => x.classList.toggle("on", x === b));
+  $("#liveForm").hidden = mode !== "live"; $("#fileForm").hidden = mode !== "file";
+});
+document.querySelectorAll("#viewTabs button").forEach(b => b.onclick = () => { view = b.dataset.view; render(); });
+
+$("#upload").onchange = async ev => {
+  const f = ev.target.files[0]; if (!f) return;
+  $("#upMsg").textContent = "Uploading…";
+  const r = await fetch("/api/upload", { method: "POST", headers: { "X-Filename": f.name }, body: f });
+  const j = await r.json();
+  if (!r.ok) { $("#upMsg").textContent = j.error; return; }
+  $("#upMsg").textContent = "Uploaded ✓";
+  await refresh(); $("#file").value = j.path;
+};
+
+refresh();
+setInterval(() => { if (!es) refresh(); }, 10000);
+</script>
+</body>
+</html>

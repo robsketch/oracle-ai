@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "sqlcl": {
+      "type": "stdio",
+      "command": "${HOME}/.local/opt/sqlcl/bin/sql",
+      "args": ["-mcp"],
+      "env": {
+        "JAVA_HOME": "${HOME}/.local/opt/java"
+      }
+    }
+  }
+}
