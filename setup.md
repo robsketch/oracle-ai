@@ -1046,5 +1046,5 @@ rm -rf ~/.local/opt/java ~/.local/opt/jdk-21* ~/.local/opt/sqlcl
 
 ### 2026-10-15: Git repo and GitHub remote
 - Project is now a git repo, pushed to private `github.com/robsketch/oracle-ai` (branch `main`).
-- `.gitignore` excludes `.env`, `db-sample-schemas/` (re-clone it per step 6),
+- `.gitignore` excludes `.env`, `db-sample-schemas/` (re-clone it per step 3),
   `.claude/settings.local.json`, `__pycache__/` and `reports/uploads/`.
