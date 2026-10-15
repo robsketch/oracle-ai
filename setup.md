@@ -1043,3 +1043,8 @@ rm -rf ~/.local/opt/java ~/.local/opt/jdk-21* ~/.local/opt/sqlcl
 - Tested file mode on `reports/awr/awr_4_5.txt` (83 s, $0.51) and live mode with the container
   stopped: the preflight started it, then 23 turns, 184 s, $0.88, report
   `reports/db-diag-demo_dbmon_cdb-20261015-1550.md`. No guard blocks.
+
+### 2026-10-15: Git repo and GitHub remote
+- Project is now a git repo, pushed to private `github.com/robsketch/oracle-ai` (branch `main`).
+- `.gitignore` excludes `.env`, `db-sample-schemas/` (re-clone it per step 6),
+  `.claude/settings.local.json`, `__pycache__/` and `reports/uploads/`.
