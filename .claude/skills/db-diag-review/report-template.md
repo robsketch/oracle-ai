@@ -5,7 +5,7 @@
 | **Overall status** | 🟢 OK / 🟡 WARN / 🔴 CRIT (the worst area rating) |
 | **Run at** | {YYYY-MM-DD HH:MM} |
 | **Sources** | MCP: `{cdb connection}` (alert log, traces, incidents, AWR on Free), `{pdb connection}` (Statspack). Or file: `{path}` ({detected type}) |
-| **Window** | alert log / traces: last {days} days · workload: {AWR|Statspack} snaps {begin}–{end} ({begin_time} → {end_time}, {elapsed}) |
+| **Window** | requested: {from} → {to} UTC (or "last {days} days") · alert log / incidents / traces: that window · workload: {AWR|Statspack} snaps {begin}–{end} ({begin_time} → {end_time} UTC, {elapsed}; FULL/PARTIAL cover), one entry per pair |
 | **Database** | {version}, instance `{instance_name}` on `{host_name}`, {num_cpus} CPUs |
 
 ## Summary

@@ -1,7 +1,7 @@
 -- db-diag-review diagnostic queries
 -- Licensing: alert log, trace files and ADR incidents come from the free V$DIAG_* views.
 -- Workload history comes from Statspack (PERFSTAT.STATS$* tables, free on every edition) or,
--- on Oracle Database Free only, from AWR (Diagnostics Pack, included in Free). The two awr_*
+-- on Oracle Database Free only, from AWR (Diagnostics Pack, included in Free). The awr_*
 -- checks are the only ones touching DBA_HIST_*. Run them only after edition_gate returns
 -- is_free = 'Y'. See LICENSING.md.
 --
@@ -11,8 +11,13 @@
 --   cdb = CDB root (whole-instance alert log / traces), default demo_dbmon_cdb
 --   pdb = the PDB that holds Statspack, default demo_dbmon
 -- Placeholders, replaced textually before running:
---   {{days}}        look-back window in days (default 7)
---   {{begin_snap}}  {{end_snap}}  Statspack snapshot ids (chosen from sp_snapshots)
+--   {{from}}  {{to}}  the review window, as TIMESTAMP WITH TIME ZONE expressions:
+--       from=/to= given:  timestamp '2026-10-16 09:00:00 +00:00'  (always UTC, always with
+--                         the +00:00: SQLcl sessions default to Europe/London, so a bare
+--                         timestamp literal would be read as BST and shift by an hour)
+--       days=N (default 7):  {{from}} = systimestamp - numtodsinterval(N, 'DAY'),  {{to}} = systimestamp
+--     AWR/Statspack store plain UTC timestamps/dates; the queries wrap these in sys_extract_utc().
+--   {{begin_snap}}  {{end_snap}}  Statspack snapshot ids (chosen from sp_window_pairs)
 --   {{trace_file}}  {{line_from}}  {{line_to}}  for trace_excerpt
 -- Every statement carries the /* db-diag-review */ tag.
 
@@ -28,7 +33,7 @@ select /* db-diag-review */
        count(case when message_level = 1 then 1 end) as critical_level,
        count(case when regexp_like(message_text, 'Starting ORACLE instance|Instance shutdown complete|Crash Recovery|Beginning crash recovery') then 1 end) as lifecycle
 from v$diag_alert_ext
-where originating_timestamp > systimestamp - numtodsinterval({{days}}, 'DAY')
+where originating_timestamp between {{from}} and {{to}}
 group by trunc(originating_timestamp), nvl(container_name, 'CDB$ROOT')
 order by 1, 2;
 
@@ -54,7 +59,7 @@ from (
          substr(regexp_replace(regexp_replace(regexp_replace(message_text,
                   '/[^ ]+\.trc', '<trace>'), '(^|[^-0-9])[0-9]{2,}', '\1N'), '\s+', ' '), 1, 200) as msg
   from v$diag_alert_ext
-  where originating_timestamp > systimestamp - numtodsinterval({{days}}, 'DAY')
+  where originating_timestamp between {{from}} and {{to}}
     and (   message_type = 2
          or message_level = 1
          or regexp_like(message_text,
@@ -75,7 +80,7 @@ select /* db-diag-review */
        nvl(container_name, 'CDB$ROOT') as container,
        substr(regexp_replace(message_text, '\s+', ' '), 1, 150) as event
 from v$diag_alert_ext
-where originating_timestamp > systimestamp - numtodsinterval({{days}}, 'DAY')
+where originating_timestamp between {{from}} and {{to}}
   and regexp_like(message_text,
         'Starting ORACLE instance|Shutting down ORACLE instance|Instance shutdown complete|'
         || 'Beginning crash recovery|Crash Recovery|Shutting down instance \(abort\)|'
@@ -94,7 +99,7 @@ select /* db-diag-review */
        to_char(p.lastinc_time, 'YYYY-MM-DD HH24:MI') as last_incident,
        (select count(*) from v$diag_incident i where i.problem_id = p.problem_id) as incidents,
        (select count(*) from v$diag_incident i where i.problem_id = p.problem_id
-          and i.create_time > systimestamp - numtodsinterval({{days}}, 'DAY')) as incidents_in_window,
+          and i.create_time between {{from}} and {{to}}) as incidents_in_window,
        p.service_request, p.bug_number
 from v$diag_problem p
 order by p.lastinc_time desc;
@@ -105,7 +110,7 @@ select /* db-diag-review */
        'ORA-' || lpad(error_number, 5, '0') as error, substr(error_arg1, 1, 40) as arg1,
        substr(error_arg2, 1, 40) as arg2, signalling_component, status, flood_controlled, con_id
 from v$diag_incident
-where create_time > systimestamp - numtodsinterval({{days}}, 'DAY')
+where create_time between {{from}} and {{to}}
 order by create_time desc
 fetch first 30 rows only;
 
@@ -113,23 +118,27 @@ fetch first 30 rows only;
 
 -- @check: trace_inventory | cdb | Trace files written in the window, by process type
 -- The process name is the middle part of FREE_<process>_<pid>.trc (ora = a user session).
+-- A file last written after the window can still hold lines from inside it, so the upper bound
+-- is applied per line in trace_signatures, not here.
 select /* db-diag-review */
        regexp_substr(trace_filename, '^[^_]+_([a-z]+)[0-9a-z]*_', 1, 1, null, 1) as process,
        count(*) as files,
        to_char(max(modify_time), 'YYYY-MM-DD HH24:MI') as latest
 from v$diag_trace_file
-where modify_time > systimestamp - numtodsinterval({{days}}, 'DAY')
+where modify_time >= {{from}}
 group by regexp_substr(trace_filename, '^[^_]+_([a-z]+)[0-9a-z]*_', 1, 1, null, 1)
 order by files desc;
 
 -- @check: trace_signatures | cdb | Serious signatures inside recent trace files
--- Scans only files modified in the window. first_line feeds trace_excerpt.
+-- Scans files modified since the window start, keeping only lines time-stamped inside the
+-- window (lines without a timestamp are kept). first_line feeds trace_excerpt.
 select /* db-diag-review */
        trace_filename, signature, count(*) as hits, min(line_number) as first_line,
+       to_char(min(ts), 'YYYY-MM-DD HH24:MI:SS') as first_hit_utc,
        to_char(max(modify_time), 'YYYY-MM-DD HH24:MI') as file_modified,
        max(container_name) as container
 from (
-  select c.trace_filename, c.line_number, f.modify_time, c.container_name,
+  select c.trace_filename, c.line_number, f.modify_time, c.container_name, c.timestamp as ts,
          case
            when regexp_like(c.payload, 'ORA-0*600[^0-9]') then 'ORA-00600 internal error'
            when regexp_like(c.payload, 'ORA-0*7445') then 'ORA-07445 process crash'
@@ -143,7 +152,8 @@ from (
   from v$diag_trace_file f
   join v$diag_trace_file_contents c
     on c.adr_home = f.adr_home and c.trace_filename = f.trace_filename
-  where f.modify_time > systimestamp - numtodsinterval({{days}}, 'DAY')
+  where f.modify_time >= {{from}}
+    and (c.timestamp is null or c.timestamp between {{from}} and {{to}})
     and regexp_like(c.payload, 'ORA-0*600[^0-9]|ORA-0*7445|ORA-0*4031|ORA-0*1578|ORA-0*1110|Corrupt block|'
                              || 'DEADLOCK DETECTED|ORA-00800|ORA-0*1555|ORA-0*1652|ORA-0*1653|ORA-0*1654|ORA-0*1688', 'i')
 )
@@ -185,6 +195,38 @@ where dbid = (select dbid from v$database)
 order by snap_id desc
 fetch first 20 rows only;
 
+-- @check: awr_window_pairs | cdb | AWR snapshot pair covering the window, one per instance startup. ONLY if edition_gate is_free = Y
+-- AWR deltas are invalid across a restart, so a window spanning restarts gives one pair per
+-- startup. begin = last snapshot at or before the window start (else the startup's first),
+-- end = first snapshot at or after the window end (else the startup's last). Snapshot times
+-- are UTC. usable = NO means that startup has only one snapshot in reach.
+with s as (
+  select snap_id, startup_time, end_interval_time as snap_time
+  from dba_hist_snapshot
+  where dbid = (select dbid from v$database)
+    and instance_number = (select instance_number from v$instance)),
+w as (select sys_extract_utc({{from}}) as f, sys_extract_utc({{to}}) as t from dual),
+seg as (
+  select s.startup_time,
+         coalesce(max(case when s.snap_time <= w.f then s.snap_id end), min(s.snap_id)) as begin_snap,
+         coalesce(min(case when s.snap_time >= w.t then s.snap_id end), max(s.snap_id)) as end_snap
+  from s cross join w
+  group by s.startup_time
+  having max(s.snap_time) > max(w.f) and min(s.snap_time) < max(w.t))
+select /* db-diag-review */
+       seg.begin_snap, seg.end_snap,
+       to_char(b.snap_time, 'YYYY-MM-DD HH24:MI') as begin_time_utc,
+       to_char(e.snap_time, 'YYYY-MM-DD HH24:MI') as end_time_utc,
+       to_char(seg.startup_time, 'YYYY-MM-DD HH24:MI:SS') as startup_time,
+       case when seg.begin_snap >= seg.end_snap then 'NO'
+            when b.snap_time <= w.f and e.snap_time >= w.t then 'FULL'
+            else 'PARTIAL' end as covers_window
+from seg
+join s b on b.snap_id = seg.begin_snap
+join s e on e.snap_id = seg.end_snap
+cross join w
+order by seg.startup_time desc;
+
 -- ===================================================================== Statspack (pdb)
 
 -- @check: sp_snapshots | pdb | Statspack snapshots (most recent 20)
@@ -198,6 +240,32 @@ select /* db-diag-review */
 from perfstat.stats$snapshot s
 order by s.snap_id desc
 fetch first 20 rows only;
+
+-- @check: sp_window_pairs | pdb | Statspack snapshot pair covering the window, one per instance startup
+-- Same rules as awr_window_pairs. snap_time is a DATE in the DB's time zone (UTC here).
+with s as (
+  select snap_id, startup_time, snap_time from perfstat.stats$snapshot),
+w as (select cast(sys_extract_utc({{from}}) as date) as f, cast(sys_extract_utc({{to}}) as date) as t from dual),
+seg as (
+  select s.startup_time,
+         coalesce(max(case when s.snap_time <= w.f then s.snap_id end), min(s.snap_id)) as begin_snap,
+         coalesce(min(case when s.snap_time >= w.t then s.snap_id end), max(s.snap_id)) as end_snap
+  from s cross join w
+  group by s.startup_time
+  having max(s.snap_time) > max(w.f) and min(s.snap_time) < max(w.t))
+select /* db-diag-review */
+       seg.begin_snap, seg.end_snap,
+       to_char(b.snap_time, 'YYYY-MM-DD HH24:MI:SS') as begin_time,
+       to_char(e.snap_time, 'YYYY-MM-DD HH24:MI:SS') as end_time,
+       to_char(seg.startup_time, 'YYYY-MM-DD HH24:MI:SS') as startup_time,
+       case when seg.begin_snap >= seg.end_snap then 'NO'
+            when b.snap_time <= w.f and e.snap_time >= w.t then 'FULL'
+            else 'PARTIAL' end as covers_window
+from seg
+join s b on b.snap_id = seg.begin_snap
+join s e on e.snap_id = seg.end_snap
+cross join w
+order by seg.startup_time desc;
 
 -- @check: sp_header | pdb | Snapshot pair, elapsed time, DB time and host
 with b as (select * from perfstat.stats$snapshot where snap_id = {{begin_snap}}),

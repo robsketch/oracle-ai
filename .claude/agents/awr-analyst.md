@@ -21,9 +21,16 @@ This prompt says *how this machine behaves*. When they conflict, the skill's har
 (read-only, licensing, bounded trace reads) win.
 
 ## Inputs
-The delegation message may contain skill arguments (`days=N`, `snaps=B-E`,
-`workload=awr|statspack`) or a file path. A file path means **file mode**: skip the preflight and
+The delegation message may contain skill arguments (`from=YYYY-MM-DDTHH:MM to=YYYY-MM-DDTHH:MM`
+in UTC, or `days=N`, plus `snaps=B-E`, `workload=awr|statspack`) or a file path. A file path means **file mode**: skip the preflight and
 the MCP steps, and run only the extractor on that file.
+
+**A `from`/`to` window is the user's question.** Scope every check to it and pick AWR pairs
+with `awr_window_pairs` (one report per startup in the window). Put the requested window in the
+report title line and the Window row, in UTC and UK local time. If the window has little or no
+AWR coverage (container stopped, or it falls inside the first 10 minutes after a startup), say
+so plainly, show the nearest snapshot times, and still review the alert log, incidents and
+traces for that window.
 
 ## Step 0: preflight (MCP mode, always first)
 Run `scripts/db-preflight.sh` (one call, nothing else on the line). It prints `key=value` facts.
@@ -66,8 +73,9 @@ Run `scripts/db-preflight.sh` (one call, nothing else on the line). It prints `k
 - If `awr_snaps_since_startup` < 2, the current startup has no valid pair yet. Use the newest
   valid pair from an earlier startup, or the one covering the alert-log evidence (skill step 4),
   and say the window is from before the latest restart.
-- The newest pair is often an idle hour on this demo box. Prefer the pair that covers the
-  interesting evidence (deadlocks, workload runs), and say why.
+- The newest pair is often an idle hour on this demo box. With `days=N` (no explicit window),
+  prefer the pair that covers the interesting evidence (deadlocks, workload runs), and say why.
+  With `from`/`to`, stay inside the window.
 
 ### Startups, and what you caused
 - If `started_by_preflight=yes`, **you** started the DB. Mark that startup in the timeline as

@@ -36,7 +36,7 @@ Docker volume, or in the project folder.
 steps in the order given in playbook C.3. Every block is safe to re-run.
 
 - **Host:** WSL2 Ubuntu 24.04, Docker 29.8 (snap).
-- **Project folder:** `<PROJECT_DIR>` (written as `$PROJ` below; set per user, see the playbook)
+- **Project folder:** `/home/rob/oracle-ai` (written as `$PROJ` below; set per user, see the playbook)
 - **Secrets:** generated into `$PROJ/.env` (mode 600, gitignored). Never put passwords on a
   command line, because they're visible in `ps` and shell history.
 
@@ -123,7 +123,7 @@ user, Statspack and so on; the notes under each step help).
 Start every command block with this:
 
 ```bash
-PROJ=<PROJECT_DIR>     # replaced with the user's project path by the onboarding agent
+PROJ=/home/rob/oracle-ai     # replaced with the user's project path by the onboarding agent
 cd "$PROJ"
 export JAVA_HOME="$HOME/.local/opt/java"
 export PATH="$HOME/.local/opt/sqlcl/bin:$JAVA_HOME/bin:$PATH"
@@ -722,7 +722,9 @@ sp_host_cpu (pdb).
 ```
 /db-diag-review                          # MCP, last 7 days, newest AWR pair (Free) or Statspack pair
 /db-diag-review workload=statspack       # force Statspack, e.g. to demo the any-edition path
-/db-diag-review days=2 snaps=13-21       # explicit window / snapshot pair
+/db-diag-review days=2 snaps=13-21       # look-back window / explicit snapshot pair
+/db-diag-review from=2026-10-16T09:30 to=2026-10-16T12:30   # timeframe in UTC: every source,
+                                         # plus one AWR report per startup inside it
 /db-diag-review samples/statspack_13_21.txt   # file mode (AWR/Statspack/alert/trace)
 ```
 Output goes to `reports/db-diag-<connection or file>-<YYYYMMDD-HHMM>.md`.
@@ -859,8 +861,13 @@ gets the same skill, SQLcl MCP server and guard hook as the CLI, and streams eac
 page. Standard-library Python with nothing to install. `marked` and `DOMPurify` are vendored
 in `webui/static/`, so it works offline.
 
-- **Live database:** look-back window, workload source (auto/AWR/Statspack), optional focus
-  note. The preflight starts `oracle-free` if it's down.
+- **Live database:** a timeframe (presets such as "last 6 hours", or a custom From/To in the
+  browser's local time, sent to the agent as UTC `from=`/`to=`), workload source
+  (auto/AWR/Statspack) and an optional focus note. The agent picks the AWR snapshot pair(s)
+  covering the timeframe (`awr_window_pairs`, one per instance startup) and generates the AWR
+  report(s) itself, so nobody has to choose report files. Under the picker, `/api/coverage`
+  lists the periods that have AWR snapshots (click one to use it). It checks the edition first and
+  queries `DBA_HIST_SNAPSHOT` only on Free. The preflight starts `oracle-free` if it's down.
 - **Analyse a report file:** pick a file in `reports/awr/` or upload one. Uploads go to
   `reports/uploads/` (`.txt .html .htm .log .xml .trc .lst`, 60 MB max).
 - The right pane shows the agent's summary and the full RAG report. The report list shows every
@@ -873,8 +880,9 @@ python3 webui/server.py            # http://localhost:8765 (PORT=9000 to change)
 ```
 From Windows, open `http://localhost:8765` in a browser (WSL2 forwards localhost).
 
-**Done when:** the page shows the `oracle-free` status pill, and a file-mode run on
-`reports/awr/awr_4_5.txt` ends with "Finished" and opens a new `reports/db-diag-awr_4_5-*.md`.
+**Done when:** the page shows the `oracle-free` status pill and an "AWR snapshots exist for"
+line, and a file-mode run on `reports/awr/awr_4_5.txt` ends with "Finished" and opens a new
+`reports/db-diag-awr_4_5-*.md`.
 
 ---
 
@@ -1048,3 +1056,17 @@ rm -rf ~/.local/opt/java ~/.local/opt/jdk-21* ~/.local/opt/sqlcl
 - Project is now a git repo, pushed to private `github.com/robsketch/oracle-ai` (branch `main`).
 - `.gitignore` excludes `.env`, `db-sample-schemas/` (re-clone it per step 3),
   `.claude/settings.local.json`, `__pycache__/` and `reports/uploads/`.
+
+### 2026-10-20: Timeframe-based analysis (steps 9b, 9g)
+- Feedback from a DBA: users should give a timeframe, not pick AWR report files. `queries.sql`
+  now takes `{{from}}`/`{{to}}` (TIMESTAMP WITH TIME ZONE expressions) instead of `{{days}}`.
+  The alert log, incidents and trace lines are all bounded by the window. New checks
+  `awr_window_pairs` and `sp_window_pairs` return one snapshot pair per instance startup that
+  overlaps the window.
+- Skill/agent take `from=YYYY-MM-DDTHH:MM to=...` (UTC). `days=N` still works.
+- Gotcha: SQLcl sessions run in `Europe/London`, so time literals must carry `+00:00`
+  (AWR/Statspack times are plain UTC, compared through `sys_extract_utc`).
+- Web UI: timeframe presets + custom From/To, UTC echo, AWR coverage chips (`/api/coverage`).
+- Tested every changed check against `demo_dbmon_cdb`/`demo_dbmon` with a mid-day window (pair
+  4→8 FULL), a window across the 16→19 Oct restart (two PARTIAL pairs), a gap (no rows) and
+  `days=7`.

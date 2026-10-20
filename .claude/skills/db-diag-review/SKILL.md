@@ -1,7 +1,7 @@
 ---
 name: db-diag-review
 description: Review Oracle diagnostic evidence (the alert log, trace files, ADR incidents, and Statspack workload snapshots, which are AWR-style performance reports) and produce a RAG-rated report that highlights problems and explains them. Pulls everything over the SQLcl MCP server by default. Also accepts a file path to an AWR/Statspack report, alert log or trace file someone has handed over. Uses AWR only on Oracle Database Free, where the Diagnostics Pack is included; Statspack everywhere else (see LICENSING.md). Use when asked to read or analyse an alert log, trace files, an AWR or Statspack report, incidents, or "what's been going wrong" with an Oracle database.
-argument-hint: "[days=7] [snaps=<begin>-<end>] [workload=awr|statspack] [cdb=<conn>] [pdb=<conn>] | <path to AWR/Statspack/alert/trace file>"
+argument-hint: "[from=<YYYY-MM-DDTHH:MM> to=<YYYY-MM-DDTHH:MM> (UTC) | days=7] [snaps=<begin>-<end>] [workload=awr|statspack] [cdb=<conn>] [pdb=<conn>] | <path to AWR/Statspack/alert/trace file>"
 ---
 
 # Oracle diagnostic review (alert log, traces, Statspack/AWR)
@@ -20,10 +20,21 @@ on. Arguments: **$ARGUMENTS**
 | Workload (AWR), **Free only** | AWR report via `scripts/awr-report.sh` → file mode | `cdb` (AWR snapshots live in the root) | `demo_dbmon_cdb` |
 | Workload (Statspack), any edition | Statspack `PERFSTAT.STATS$*` | `pdb` (Statspack lives in the PDB) | `demo_dbmon` |
 
-Optional arguments: `days=N` (look-back window, default 7), `snaps=B-E` (snapshot pair for
-the workload source; default is the newest valid pair), `workload=awr|statspack` (default:
-AWR if the edition gate passes, else Statspack), `cdb=<conn>` and `pdb=<conn>` to override connections.
+Optional arguments:
+- **Window**: `from=YYYY-MM-DDTHH:MM to=YYYY-MM-DDTHH:MM`, in **UTC** (the DB's clock). This is
+  an explicit timeframe: every source (alert log, incidents, traces *and* the workload
+  snapshots) is limited to it. Or `days=N`, a look-back window ending now (default 7). If
+  both are given, `from`/`to` win.
+- `snaps=B-E`: a snapshot pair for the workload source (overrides the window's choice).
+- `workload=awr|statspack` (default: AWR if the edition gate passes, else Statspack).
+- `cdb=<conn>` and `pdb=<conn>` to override connections.
+
 If a role has no usable connection, run the other role's checks and say what was skipped.
+
+**Placeholders.** Every check takes the window as `{{from}}`/`{{to}}`. With `from`/`to`, substitute
+`timestamp 'YYYY-MM-DD HH:MI:00 +00:00'`, keeping the `+00:00`. SQLcl sessions run in
+Europe/London, so a literal without it would be off by an hour in summer. With `days=N`, substitute
+`systimestamp - numtodsinterval(N, 'DAY')` and `systimestamp`.
 
 **File mode.** If the argument is a path to an existing file (or a directory of them), use
 [extract_report.py](extract_report.py) instead of MCP for that file:
@@ -58,8 +69,8 @@ show what it found rather than guessing.
 ## Workflow (MCP mode)
 1. **Connect** to the `cdb` connection with `connect` (pass your model name in `model`). If a
    name isn't recognised, call `connections_list` and ask; don't guess.
-2. **Run the `cdb` checks** from `queries.sql` in order, replacing `{{days}}`. Each check
-   starts with `-- @check: <id> | <role> | <title>`. Send each statement verbatim (after
+2. **Run the `cdb` checks** from `queries.sql` in order, substituting `{{from}}`/`{{to}}` as
+   above. Each check starts with `-- @check: <id> | <role> | <title>`. Send each statement verbatim (after
    placeholder substitution) as one `sql_run` call, keeping the `/* db-diag-review */` tag. If a
    check errors, record it and carry on.
 3. **Excerpt traces.** For each distinct signature in `trace_signatures` (newest file first,
@@ -68,18 +79,32 @@ show what it found rather than guessing.
    deadlock graph, the sessions and modules involved, and both "current SQL" statements. For
    an internal error, extract the error arguments and the failing call / SQL.
 4. **Workload, AWR path** (only when `edition_gate` says `is_free = 'Y'` and the user didn't
-   ask for `workload=statspack`). Run `awr_snapshots` on the `cdb` connection and choose the
-   pair: `snaps=` if given, else the newest two adjacent snapshots with the same
-   `startup_time`. If the alert-log evidence (e.g. a deadlock) falls in an older pair, prefer
-   the pair that covers it and say why. Run `scripts/awr-report.sh <begin> <end>` via Bash,
-   then analyse `reports/awr/awr_<begin>_<end>.txt` with `extract_report.py` exactly as in file
-   mode. AWR snapshots are hourly, so the window is an hour (or more) unless someone took
-   manual snapshots. Then skip to step 5. If there are fewer than two usable AWR snapshots,
-   fall back to Statspack.
+   ask for `workload=statspack`). Run `awr_snapshots` on the `cdb` connection, then choose:
+   - `snaps=` given: use that pair.
+   - `from`/`to` given: run `awr_window_pairs`. It returns one pair per instance startup that
+     overlaps the window (deltas never span a restart), with `covers_window` FULL, PARTIAL or
+     NO (a single snapshot, so unusable). Generate a report for **every usable row**, newest
+     first, up to 3. The user chose this window, so don't swap in a "more interesting" pair
+     outside it. If no row is usable, say the window has no AWR coverage (the DB was down, or
+     the window falls between two hourly snapshots of a new startup), list the nearest
+     snapshot times from `awr_snapshots`, and skip to Statspack.
+   - Otherwise (`days=N`): the newest two adjacent snapshots with the same `startup_time`. If
+     the alert-log evidence (e.g. a deadlock) falls in an older pair, prefer the pair that
+     covers it and say why.
+
+   For each chosen pair, run `scripts/awr-report.sh <begin> <end>` via Bash, then analyse
+   `reports/awr/awr_<begin>_<end>.txt` with `extract_report.py` exactly as in file mode. AWR
+   snapshots are hourly, so a pair snaps out to whole hours around the requested window; state
+   the actual snapshot times next to the requested window. When there are several pairs,
+   analyse each one, compare them (e.g. "the load was on the 16th, the 19th was idle"), and
+   rate on the worst. Then skip to step 5. If there are no usable AWR pairs, fall back to
+   Statspack.
+
    **Workload, Statspack path** (any edition).
    **Switch** to the `pdb` connection (`disconnect`, then `connect`). Run `sp_snapshots`. Choose
-   the pair: `snaps=` if given, else the newest two adjacent snapshots with the same
-   `startup_time`. If there are fewer than two usable snapshots, skip the workload section and
+   the pair the same way as for AWR. With `from`/`to`, use `sp_window_pairs`, but run the `sp_*`
+   checks for one pair only: the FULL one, else the PARTIAL one with the longest span. Name
+   the others in the report. If there are fewer than two usable snapshots, skip the workload section and
    say how to take them (`scripts/demo-diag-load.sh`, or `statspack.snap` as PERFSTAT). Then run
    the remaining `sp_*` checks with `{{begin_snap}}`/`{{end_snap}}` substituted.
 5. **Correlate.** Line up the time-stamped evidence. Did the deadlock in the alert log fall

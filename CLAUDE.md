@@ -132,7 +132,9 @@ allowlist and the agent prompt together.
 ## Web front end (added 2026-10-15)
 `webui/server.py` (stdlib, `127.0.0.1:8765`) + `webui/index.html`: a browser UI that runs the
 agent headless with `claude -p --agent awr-analyst --output-format stream-json` and streams
-progress over SSE. Live-DB mode or file mode (uploads go to `reports/uploads/`). It depends on the
+progress over SSE. Live-DB mode takes a **timeframe** (sent as UTC `from=`/`to=`). The agent picks
+the AWR pair(s) via `awr_window_pairs`, and the page shows AWR coverage from `/api/coverage`. File mode
+(uploads go to `reports/uploads/`) is for reports from other systems. It depends on the
 guard hook auto-approving, so if you change the agent's commands, test a headless run too. See
 setup.md step 9g. Start it with `python3 webui/server.py`.
 

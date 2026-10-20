@@ -18,6 +18,7 @@ import subprocess
 import threading
 import time
 import uuid
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -37,6 +38,33 @@ STATIC = {
     "/static/purify.min.js": ("static/purify.min.js", "text/javascript"),
 }
 REPORT_RE = re.compile(r"reports/(db-(?:diag|health)-[\w.-]+\.md)")
+WINDOW_FMT = "%Y-%m-%dT%H:%M"  # from/to as sent by the UI and passed to the agent, UTC
+MAX_WINDOW_DAYS = 31
+
+# AWR coverage for the timeframe picker. AWR is Diagnostics Pack, so DBA_HIST_* is queried only
+# after the edition check says Free (LICENSING.md). Same read-only connection as the agent.
+SQL_CONN = "demo_dbmon_cdb"
+SQL_ENV = dict(os.environ, JAVA_HOME=os.path.expanduser("~/.local/opt/java"))
+SQL_ENV["PATH"] = os.path.expanduser("~/.local/opt/sqlcl/bin:~/.local/opt/java/bin:") + SQL_ENV["PATH"]
+EDITION_SQL = """set heading off feedback off
+set sqlformat default
+select /* db-diag-review */ edition from v$instance;
+"""
+COVERAGE_SQL = """set feedback off
+set sqlformat csv
+select /* db-diag-review */
+       to_char(startup_time, 'YYYY-MM-DD"T"HH24:MI:SS') as startup_utc,
+       to_char(min(end_interval_time), 'YYYY-MM-DD"T"HH24:MI:SS') as first_snap_utc,
+       to_char(max(end_interval_time), 'YYYY-MM-DD"T"HH24:MI:SS') as last_snap_utc,
+       count(*) as snaps
+from dba_hist_snapshot
+where dbid = (select dbid from v$database)
+  and instance_number = (select instance_number from v$instance)
+group by startup_time
+order by startup_time;
+"""
+COVERAGE_TTL = 120
+_coverage = {"at": 0, "data": None}
 
 
 class Job:
@@ -109,6 +137,56 @@ def db_status():
         return {"state": parts[0] if parts else "unknown", "health": parts[1] if len(parts) > 1 else ""}
     except (OSError, subprocess.TimeoutExpired) as e:
         return {"state": "unknown", "detail": str(e)[:200]}
+
+
+def run_sql(script):
+    r = subprocess.run(["sql", "-S", "-name", SQL_CONN], input=script, capture_output=True,
+                       text=True, timeout=60, env=SQL_ENV, cwd=PROJECT)
+    out = r.stdout.strip()
+    if r.returncode != 0 or re.search(r"ORA-\d{5}|SP2-\d{4}|Connection failed", out):
+        m = re.search(r"(?:ORA|SP2)-\d+.*", out + "\n" + r.stderr)
+        raise RuntimeError(m.group(0)[:200] if m else f"sql exited {r.returncode}")
+    return out
+
+
+def awr_coverage(force=False):
+    """AWR snapshot ranges, one per instance startup, so the user can pick a window with data."""
+    if not force and _coverage["data"] and time.time() - _coverage["at"] < COVERAGE_TTL:
+        return _coverage["data"]
+    db = db_status()
+    if db.get("state") != "running" or db.get("health") not in ("healthy", ""):
+        return {"available": False, "reason": "database not running, so AWR coverage is unknown "
+                "until the agent starts it"}
+    try:
+        edition = run_sql(EDITION_SQL).split()[-1]
+        if edition != "FREE":
+            data = {"available": False, "edition": edition,
+                    "reason": f"edition {edition}: AWR needs the Diagnostics Pack, so the agent uses Statspack"}
+        else:
+            rows = [ln.replace('"', "").split(",") for ln in run_sql(COVERAGE_SQL).splitlines()[1:] if ln.strip()]
+            data = {"available": True, "edition": edition,
+                    "segments": [{"startup": s, "first": f, "last": l, "snaps": int(n)} for s, f, l, n in rows]}
+    except (RuntimeError, OSError, subprocess.TimeoutExpired, ValueError) as e:
+        return {"available": False, "reason": f"could not read AWR coverage: {e}"}
+    _coverage.update(at=time.time(), data=data)
+    return data
+
+
+def parse_window(body):
+    """from/to (UTC, YYYY-MM-DDTHH:MM) -> validated datetimes."""
+    try:
+        frm = datetime.strptime(str(body.get("from", "")), WINDOW_FMT)
+        to = datetime.strptime(str(body.get("to", "")), WINDOW_FMT)
+    except ValueError:
+        raise ValueError("from/to must be YYYY-MM-DDTHH:MM (UTC)")
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    if frm >= to:
+        raise ValueError("the timeframe must end after it starts")
+    if frm > now:
+        raise ValueError("the timeframe starts in the future")
+    if to - frm > timedelta(days=MAX_WINDOW_DAYS):
+        raise ValueError(f"the timeframe can be at most {MAX_WINDOW_DAYS} days")
+    return frm, min(to, now + timedelta(minutes=1))
 
 
 def summarise_tool(name, inp):
@@ -205,10 +283,18 @@ def run_job(job):
 def build_prompt(body):
     mode = body.get("mode")
     if mode == "live":
-        days = int(body.get("days", 7))
-        if not 1 <= days <= 30:
-            raise ValueError("days must be 1-30")
-        args = [f"days={days}"]
+        if body.get("from") or body.get("to"):
+            frm, to = parse_window(body)
+            args = [f"from={frm:{WINDOW_FMT}}", f"to={to:{WINDOW_FMT}}"]
+            same_day = frm.date() == to.date()
+            span = f"{frm:%d %b %H:%M}–{to:%H:%M}" if same_day else f"{frm:%d %b %H:%M} – {to:%d %b %H:%M}"
+            label = f"Live review · {span} UTC"
+        else:
+            days = int(body.get("days", 7))
+            if not 1 <= days <= 30:
+                raise ValueError("days must be 1-30")
+            args = [f"days={days}"]
+            label = f"Live review · {days}d"
         workload = body.get("workload", "auto")
         if workload in ("awr", "statspack"):
             args.append(f"workload={workload}")
@@ -218,7 +304,7 @@ def build_prompt(body):
         prompt = "Run the diag review against the local database. Arguments: " + " ".join(args) + "."
         if focus:
             prompt += f" The user would like you to pay particular attention to: {focus}"
-        return prompt, f"Live review · {days}d · {workload}"
+        return prompt, f"{label} · {workload}"
     if mode == "file":
         path = body.get("path", "")
         if path not in {f["path"] for f in list_input_files()}:
@@ -265,6 +351,8 @@ class Handler(BaseHTTPRequestHandler):
                 "db": db_status(), "agent": AGENT, "claude": bool(CLAUDE),
                 "reports": list_reports(), "files": list_input_files(),
                 "job": {"id": job.id, "label": job.label, "done": job.done} if job else None})
+        elif u.path == "/api/coverage":
+            self.send_json(awr_coverage(force="refresh" in parse_qs(u.query)))
         elif u.path == "/api/report":
             name = parse_qs(u.query).get("name", [""])[0]
             if name not in {r["name"] for r in list_reports()}:
