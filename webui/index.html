@@ -7,205 +7,281 @@
 <script src="/static/marked.min.js"></script>
 <script src="/static/purify.min.js"></script>
 <style>
+@font-face { font-family: "Barlow"; font-weight: 400; font-display: swap; src: url(/static/barlow-latin-400-normal.woff2) format("woff2"); }
+@font-face { font-family: "Barlow"; font-weight: 500; font-display: swap; src: url(/static/barlow-latin-500-normal.woff2) format("woff2"); }
+@font-face { font-family: "Barlow"; font-weight: 600; font-display: swap; src: url(/static/barlow-latin-600-normal.woff2) format("woff2"); }
+@font-face { font-family: "Barlow Semi Condensed"; font-weight: 600; font-display: swap; src: url(/static/barlow-semi-condensed-latin-600-normal.woff2) format("woff2"); }
+@font-face { font-family: "JetBrains Mono"; font-weight: 400; font-display: swap; src: url(/static/jetbrains-mono-latin-400-normal.woff2) format("woff2"); }
+
+/* Chart paper, ink, and one accent: the header blue of Oracle's own AWR reports.
+   Red/amber/green are kept for RAG status only. */
 :root {
-  --bg: #f5f6f8; --panel: #ffffff; --ink: #1d2330; --muted: #5d6677; --line: #e1e4ea;
-  --accent: #c74634; --accent-ink: #ffffff; --soft: #f0f2f5; --code: #f3f4f7;
-  --ok: #1f8a4c; --warn: #b7791f; --crit: #c53030; --info: #2b6cb0;
-  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.08);
+  --paper: #e9edf1; --sheet: #ffffff; --ink: #18212c; --ink-2: #4f5b69; --ink-3: #75808d;
+  --rule: #c9d1da; --rule-soft: #dde3e9; --field: #ffffff;
+  --signal: #2347a8; --signal-ink: #ffffff; --signal-wash: rgba(35, 71, 168, .14);
+  --hatch: #bcc5cf; --code: #f0f3f6;
+  --ok: #2c7a4b; --warn: #a86b0c; --crit: #b1281f;
+  --sans: "Barlow", "Segoe UI", system-ui, sans-serif;
+  --cond: "Barlow Semi Condensed", "Barlow", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #12151b; --panel: #1a1e26; --ink: #e6e9ef; --muted: #9aa3b2; --line: #2b313d;
-    --accent: #e05a47; --soft: #222833; --code: #20252f; --shadow: none;
-    --ok: #48bb78; --warn: #ecc94b; --crit: #fc8181; --info: #63b3ed;
+    --paper: #151a21; --sheet: #1c232c; --ink: #e3e8ee; --ink-2: #a3aebb; --ink-3: #7d8896;
+    --rule: #303b48; --rule-soft: #26303b; --field: #1c232c;
+    --signal: #7f9ff2; --signal-ink: #0f1830; --signal-wash: rgba(127, 159, 242, .18);
+    --hatch: #3a4553; --code: #232b35;
+    --ok: #5cb984; --warn: #e0a93b; --crit: #ee6b5f;
   }
 }
+:root[data-theme="dark"] {
+  --paper: #151a21; --sheet: #1c232c; --ink: #e3e8ee; --ink-2: #a3aebb; --ink-3: #7d8896;
+  --rule: #303b48; --rule-soft: #26303b; --field: #1c232c;
+  --signal: #7f9ff2; --signal-ink: #0f1830; --signal-wash: rgba(127, 159, 242, .18);
+  --hatch: #3a4553; --code: #232b35;
+  --ok: #5cb984; --warn: #e0a93b; --crit: #ee6b5f;
+}
+
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--ink);
-  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-header { display: flex; align-items: center; gap: 14px; padding: 12px 20px;
-  background: var(--panel); border-bottom: 1px solid var(--line); }
-header h1 { font-size: 17px; margin: 0; font-weight: 650; }
-header .sub { color: var(--muted); font-size: 13px; }
-.logo { width: 30px; height: 30px; border-radius: 7px; background: var(--accent); color: #fff;
-  display: grid; place-items: center; font-weight: 700; font-size: 14px; }
-.spacer { flex: 1; }
-.pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px;
-  background: var(--soft); font-size: 12.5px; color: var(--muted); white-space: nowrap; }
-.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
-.dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.crit { background: var(--crit); }
-main { display: grid; grid-template-columns: 380px 1fr; gap: 16px; padding: 16px 20px;
-  height: calc(100vh - 57px); }
-@media (max-width: 900px) { main { grid-template-columns: 1fr; height: auto; } }
-.col { display: flex; flex-direction: column; gap: 16px; min-height: 0; }
-.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
-  box-shadow: var(--shadow); display: flex; flex-direction: column; min-height: 0; }
-.card > h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted);
-  margin: 0; padding: 12px 14px 8px; display: flex; align-items: center; gap: 8px; }
-.card .body { padding: 0 14px 14px; }
-.tabs { display: flex; gap: 4px; background: var(--soft); padding: 3px; border-radius: 8px; margin-bottom: 12px; }
-.tabs button { flex: 1; border: 0; background: transparent; padding: 6px 8px; border-radius: 6px;
-  color: var(--muted); font: inherit; cursor: pointer; }
-.tabs button.on { background: var(--panel); color: var(--ink); box-shadow: var(--shadow); font-weight: 600; }
-label { display: block; font-size: 12.5px; color: var(--muted); margin: 8px 0 4px; }
-select, input[type=text], input[type=datetime-local], textarea { width: 100%; padding: 7px 9px; border: 1px solid var(--line);
-  border-radius: 7px; background: var(--panel); color: var(--ink); font: inherit; }
-textarea { resize: vertical; min-height: 54px; }
-.row { display: flex; gap: 10px; } .row > div { flex: 1; }
-.btns { display: flex; gap: 8px; margin-top: 14px; }
-button.primary { flex: 1; background: var(--accent); color: var(--accent-ink); border: 0; padding: 9px 12px;
-  border-radius: 8px; font: inherit; font-weight: 600; cursor: pointer; }
-button.primary:disabled { opacity: .55; cursor: default; }
-button.ghost { background: transparent; border: 1px solid var(--line); color: var(--ink); padding: 8px 12px;
-  border-radius: 8px; font: inherit; cursor: pointer; }
-button.ghost:disabled { opacity: .5; cursor: default; }
-.hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
-.cov { margin-top: 8px; font-size: 12px; color: var(--muted); }
-.cov .seg { display: inline-block; margin: 4px 4px 0 0; padding: 2px 8px; border-radius: 999px;
-  border: 1px solid var(--line); background: var(--soft); color: var(--ink); cursor: pointer; font: inherit; font-size: 12px; }
-.cov .seg:hover { border-color: var(--accent); }
-.cov .seg.hit { border-color: var(--ok); }
-.cov .warn { color: var(--warn); }
-.upload { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
-.upload input { font-size: 12px; color: var(--muted); }
-#activity { flex: 1; min-height: 160px; }
-#feed { overflow: auto; padding: 0 14px 14px; font-size: 12.5px; flex: 1; }
-.ev { display: grid; grid-template-columns: 42px 18px 1fr; gap: 6px; padding: 5px 0;
-  border-bottom: 1px dashed var(--line); }
-.ev:last-child { border-bottom: 0; }
-.ev .t { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
-.ev .i { text-align: center; }
-.ev .n { font-weight: 600; }
-.ev .d { color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px;
-  word-break: break-word; }
-.ev.err .n, .ev.err .d { color: var(--crit); }
-.ev.say .d { font-family: inherit; color: var(--ink); font-size: 12.5px; }
-.spinner { width: 12px; height: 12px; border: 2px solid var(--line); border-top-color: var(--accent);
-  border-radius: 50%; animation: spin .8s linear infinite; display: inline-block; }
-@keyframes spin { to { transform: rotate(360deg); } }
-#reports { max-height: 230px; }
-#reportList { overflow: auto; padding: 0 8px 10px; }
-.rep { display: flex; justify-content: space-between; gap: 8px; padding: 6px 8px; border-radius: 6px;
-  cursor: pointer; font-size: 12.5px; }
-.rep:hover, .rep.on { background: var(--soft); }
-.rep .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rep .st { white-space: nowrap; color: var(--muted); }
-#viewer { flex: 1; }
-#viewer .head { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
-#viewer .head .tabs { margin: 0; flex: 0 0 auto; }
-#viewer .head .tabs button { flex: 0 0 auto; padding: 5px 14px; }
-#viewer .title { color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#doc { overflow: auto; padding: 8px 26px 30px; flex: 1; }
-.empty { color: var(--muted); text-align: center; padding: 60px 20px; }
-.empty .big { font-size: 34px; }
-.md h1 { font-size: 22px; margin: 18px 0 10px; } .md h2 { font-size: 17px; margin: 24px 0 8px;
-  padding-bottom: 4px; border-bottom: 1px solid var(--line); } .md h3 { font-size: 15px; }
-.md table { border-collapse: collapse; margin: 10px 0; font-size: 13px; display: block; overflow-x: auto; }
-.md th, .md td { border: 1px solid var(--line); padding: 6px 9px; text-align: left; vertical-align: top; }
-.md th { background: var(--soft); }
-.md code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
-.md pre { background: var(--code); padding: 10px 12px; border-radius: 7px; overflow-x: auto; }
+html, body { margin: 0; }
+body { background: var(--paper); color: var(--ink); font: 15px/1.5 var(--sans); -webkit-font-smoothing: antialiased; }
+h1, h2, h3 { font-family: var(--cond); font-weight: 600; margin: 0; letter-spacing: .005em; }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+[hidden] { display: none !important; }
+
+/* ---------- top bar ---------- */
+.top { display: flex; align-items: baseline; gap: 18px; padding: 16px 28px 0; flex-wrap: wrap; }
+.top h1 { font-size: 24px; line-height: 1.2; }
+.top .what { color: var(--ink-2); font-size: 14px; }
+.top .db { margin-left: auto; font-size: 14px; color: var(--ink-2); display: flex; align-items: center; gap: 8px; }
+.lamp { width: 9px; height: 9px; border-radius: 50%; background: var(--ink-3); flex: none; }
+.lamp.ok { background: var(--ok); } .lamp.warn { background: var(--warn); } .lamp.crit { background: var(--crit); }
+
+/* ---------- control band ---------- */
+.band { padding: 14px 28px 18px; border-bottom: 1px solid var(--rule); }
+.modes { display: inline-flex; border: 1px solid var(--rule); border-radius: 5px; overflow: hidden; margin-bottom: 14px; }
+.modes button { border: 0; background: transparent; padding: 6px 14px; cursor: pointer; color: var(--ink-2); }
+.modes button + button { border-left: 1px solid var(--rule); }
+.modes button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+
+.when { display: flex; flex-wrap: wrap; align-items: end; gap: 10px 22px; }
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field > span { font-size: 13px; color: var(--ink-2); }
+.presets { display: flex; gap: 4px; flex-wrap: wrap; }
+.presets button { border: 1px solid var(--rule); background: var(--field); border-radius: 4px; padding: 5px 10px;
+  cursor: pointer; font-variant-numeric: tabular-nums; }
+.presets button[aria-pressed="true"] { border-color: var(--signal); color: var(--signal); box-shadow: inset 0 0 0 1px var(--signal); }
+input[type=datetime-local], input[type=text], select, textarea {
+  border: 1px solid var(--rule); border-radius: 4px; background: var(--field); padding: 5px 8px; min-height: 34px; }
+.utc { font-size: 13px; color: var(--ink-2); padding-bottom: 7px; font-variant-numeric: tabular-nums; }
+
+/* the strip chart */
+.strip { margin-top: 14px; position: relative; }
+.strip svg { display: block; width: 100%; height: 104px; cursor: crosshair; touch-action: none; user-select: none; }
+.strip .note { font-size: 13px; color: var(--ink-3); margin-top: 6px; display: flex; gap: 18px; flex-wrap: wrap; }
+.strip .note b { font-weight: 500; color: var(--ink-2); }
+.strip .warnline { color: var(--warn); }
+.key { display: inline-block; width: 14px; height: 10px; vertical-align: -1px; margin-right: 5px; border: 1px solid var(--rule); }
+.key.data { background: var(--signal-wash); border-color: var(--signal); }
+.key.gap { background: repeating-linear-gradient(135deg, var(--hatch) 0 1.5px, transparent 1.5px 5px); }
+.key.sel { background: var(--signal); border-color: var(--signal); opacity: .5; }
+
+.go { display: flex; gap: 12px 18px; align-items: end; margin-top: 16px; flex-wrap: wrap; }
+.go .focus { flex: 1 1 320px; }
+.go .focus input { width: 100%; }
+.btn { border-radius: 4px; padding: 7px 18px; min-height: 36px; cursor: pointer; font-weight: 600; }
+.btn.run { background: var(--signal); color: var(--signal-ink); border: 1px solid var(--signal); min-width: 150px; }
+.btn.run:disabled { opacity: .6; cursor: default; }
+.btn.stop { background: transparent; border: 1px solid var(--rule); color: var(--ink); font-weight: 500; }
+.btn.stop:disabled { color: var(--ink-3); cursor: default; }
+.aside { font-size: 13px; color: var(--ink-3); margin: 10px 0 0; max-width: 78ch; }
+
+.filepick { display: flex; gap: 12px 18px; align-items: end; flex-wrap: wrap; }
+.filepick select { min-width: min(520px, 100%); }
+.upload input { font-size: 13px; color: var(--ink-2); }
+
+/* ---------- work area ---------- */
+.work { display: grid; grid-template-columns: minmax(300px, 380px) 1fr; min-height: calc(100vh - 330px); }
+.side { border-right: 1px solid var(--rule); display: flex; flex-direction: column; min-height: 0; }
+.side section { padding: 16px 20px 16px 28px; }
+.side section + section { border-top: 1px solid var(--rule); }
+.side h2, .sheet-head h2 { font-size: 17px; display: flex; align-items: baseline; gap: 10px; }
+.side h2 .count { font-family: var(--sans); font-weight: 400; font-size: 13px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+#log { margin-top: 10px; max-height: 46vh; overflow: auto; font-size: 13.5px; }
+.ln { display: grid; grid-template-columns: 38px 52px 1fr; gap: 8px; padding: 4px 0; border-top: 1px solid var(--rule-soft); }
+.ln:first-child { border-top: 0; }
+.ln .t { color: var(--ink-3); font-variant-numeric: tabular-nums; text-align: right; }
+.ln .k { color: var(--ink-2); font-weight: 500; }
+.ln .k.sql { color: var(--signal); }
+.ln .d { min-width: 0; overflow-wrap: anywhere; }
+.ln .d code { font: 12px/1.45 var(--mono); color: var(--ink-2); }
+.ln.bad .k, .ln.bad .d { color: var(--crit); }
+.ln.end .k { color: var(--ok); }
+.quiet { color: var(--ink-3); font-size: 14px; margin: 10px 0 0; }
+
+#reportList { margin: 8px -8px 0; max-height: 34vh; overflow: auto; }
+.rep { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; width: 100%; text-align: left; border: 0;
+  background: transparent; padding: 7px 8px; border-radius: 4px; cursor: pointer; }
+.rep:hover { background: var(--rule-soft); }
+.rep[aria-current="true"] { background: var(--signal-wash); }
+.rep .nm { font-weight: 500; }
+.rep .sub { grid-column: 1; font-size: 13px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.rep .rag { grid-row: 1 / span 2; grid-column: 2; align-self: center; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.sq { width: 10px; height: 10px; border-radius: 2px; background: var(--ink-3); }
+.rag.ok { color: var(--ok); } .rag.ok .sq { background: var(--ok); }
+.rag.warn { color: var(--warn); } .rag.warn .sq { background: var(--warn); }
+.rag.crit { color: var(--crit); } .rag.crit .sq { background: var(--crit); }
+
+.main { padding: 18px 28px 40px; min-width: 0; }
+.sheet { background: var(--sheet); border: 1px solid var(--rule); border-radius: 3px; max-width: 1040px; }
+.sheet-head { display: flex; align-items: center; gap: 16px; padding: 10px 22px; border-bottom: 1px solid var(--rule); flex-wrap: wrap; }
+.views { display: inline-flex; gap: 2px; }
+.views button { border: 0; background: transparent; padding: 6px 10px; cursor: pointer; color: var(--ink-2);
+  border-bottom: 2px solid transparent; }
+.views button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--signal); font-weight: 600; }
+.sheet-head .title { color: var(--ink-3); font-size: 13px; margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+#doc { padding: 10px 34px 36px; }
+.empty { color: var(--ink-2); padding: 56px 0; max-width: 52ch; }
+.empty h3 { font-size: 20px; color: var(--ink); margin-bottom: 6px; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 28px; margin: 14px 0 4px; padding: 0 0 12px; border-bottom: 1px solid var(--rule-soft); font-size: 13.5px; }
+.meta dt { color: var(--ink-3); } .meta dd { margin: 0; font-weight: 500; font-variant-numeric: tabular-nums; }
+.meta div { display: flex; gap: 6px; }
+
+/* report markdown */
+.md { max-width: 86ch; }
+.md h1 { font-size: 26px; line-height: 1.2; margin: 22px 0 12px; }
+.md h2 { font-size: 20px; margin: 30px 0 8px; }
+.md h3 { font-size: 16.5px; margin: 22px 0 6px; }
+.md p, .md li { max-width: 78ch; }
+.md table { border-collapse: collapse; margin: 12px 0; font-size: 14px; display: block; overflow-x: auto; max-width: 100%; }
+.md th, .md td { border-bottom: 1px solid var(--rule-soft); padding: 7px 12px 7px 0; text-align: left; vertical-align: top; }
+.md th { font-weight: 600; color: var(--ink-2); border-bottom: 1px solid var(--rule); }
+.md td:first-child { font-weight: 500; }
+.md code { font: 12.5px var(--mono); background: var(--code); padding: 1px 5px; border-radius: 3px; }
+.md pre { background: var(--code); padding: 12px 14px; border-radius: 3px; overflow-x: auto; }
 .md pre code { background: none; padding: 0; }
-.md td.rag-crit { background: color-mix(in srgb, var(--crit) 12%, transparent); }
-.md td.rag-warn { background: color-mix(in srgb, var(--warn) 14%, transparent); }
-.md td.rag-ok { background: color-mix(in srgb, var(--ok) 10%, transparent); }
-.banner { margin: 14px 0 4px; padding: 10px 14px; border-radius: 8px; background: var(--soft);
-  display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); }
-.banner b { color: var(--ink); }
+.md td.rag-crit { color: var(--crit); font-weight: 600; box-shadow: inset 3px 0 0 var(--crit); padding-left: 10px; }
+.md td.rag-warn { color: var(--warn); font-weight: 600; box-shadow: inset 3px 0 0 var(--warn); padding-left: 10px; }
+.md td.rag-ok { color: var(--ok); font-weight: 600; box-shadow: inset 3px 0 0 var(--ok); padding-left: 10px; }
+
+@media (max-width: 900px) {
+  .top, .band { padding-left: 16px; padding-right: 16px; }
+  .work { grid-template-columns: 1fr; }
+  .side { border-right: 0; border-bottom: 1px solid var(--rule); }
+  .side section { padding: 14px 16px; }
+  .main { padding: 14px 16px 30px; }
+  #doc { padding: 6px 16px 26px; }
+  .top .db { margin-left: 0; width: 100%; }
+}
 </style>
 </head>
 <body>
-<header>
-  <div class="logo">DBA</div>
-  <div>
-    <h1>Oracle DBA Assistant</h1>
-    <div class="sub">Claude Code agent <code>awr-analyst</code> · read-only diagnostics over SQLcl MCP</div>
-  </div>
-  <div class="spacer"></div>
-  <span class="pill" id="dbPill"><span class="dot"></span><span>Database: checking…</span></span>
+<header class="top">
+  <h1>Oracle DBA assistant</h1>
+  <span class="what">Read-only diagnostics by the <code>awr-analyst</code> agent</span>
+  <span class="db" id="db"><span class="lamp"></span><span>Checking the database…</span></span>
 </header>
 
-<main>
-  <div class="col">
-    <section class="card">
-      <h2>Run the agent</h2>
-      <div class="body">
-        <div class="tabs" id="modeTabs">
-          <button data-mode="live" class="on">Live database</button>
-          <button data-mode="file">Analyse a report file</button>
-        </div>
-        <div id="liveForm">
-          <div class="row">
-            <div><label for="preset">Timeframe</label>
-              <select id="preset"><option value="1">Last hour</option><option value="6">Last 6 hours</option>
-                <option value="24">Last 24 hours</option><option value="72">Last 3 days</option>
-                <option value="168" selected>Last 7 days</option><option value="custom">Custom range…</option></select></div>
-            <div><label for="workload">Workload source</label>
-              <select id="workload"><option value="auto" selected>Auto (AWR on Free)</option>
-                <option value="awr">AWR</option><option value="statspack">Statspack</option></select></div>
-          </div>
-          <div class="row">
-            <div><label for="from">From (your local time)</label><input type="datetime-local" id="from"></div>
-            <div><label for="to">To</label><input type="datetime-local" id="to"></div>
-          </div>
-          <div class="hint" id="utcHint"></div>
-          <div class="cov" id="coverage"><span class="hint">AWR coverage: checking…</span></div>
-          <label for="focus">Anything to focus on? (optional)</label>
-          <textarea id="focus" placeholder="e.g. users reported slowness yesterday afternoon"></textarea>
-          <div class="hint">Reads the alert log, ADR incidents, trace files and the AWR snapshots for the
-            timeframe through the read-only <code>c##dbmon</code> account, and generates the AWR report(s) for
-            it. Starts the container first if it's down.</div>
-        </div>
-        <div id="fileForm" hidden>
-          <label for="file">AWR / Statspack report, alert log or trace file</label>
-          <select id="file"></select>
-          <div class="upload"><input type="file" id="upload" accept=".txt,.html,.htm,.log,.xml,.trc,.lst">
-            <span class="hint" id="upMsg"></span></div>
-          <div class="hint">File mode doesn't touch the database. The agent parses the file with
-            <code>extract_report.py</code> and rates what it finds.</div>
-        </div>
-        <div class="btns">
-          <button class="primary" id="runBtn">Run analysis</button>
-          <button class="ghost" id="stopBtn" disabled>Stop</button>
-        </div>
-      </div>
-    </section>
-
-    <section class="card" id="activity">
-      <h2>Agent activity <span id="spin"></span><span class="spacer"></span><span id="elapsed" class="pill" hidden></span></h2>
-      <div id="feed"><div class="empty" style="padding:24px 0">No run yet.</div></div>
-    </section>
-
-    <section class="card" id="reports">
-      <h2>Reports</h2>
-      <div id="reportList"></div>
-    </section>
+<section class="band" aria-label="Run the analysis">
+  <div class="modes" role="group" aria-label="What to analyse">
+    <button data-mode="live" aria-pressed="true">Live database</button>
+    <button data-mode="file" aria-pressed="false">Report file</button>
   </div>
 
-  <section class="card" id="viewer">
-    <div class="head">
-      <div class="tabs" id="viewTabs">
-        <button data-view="summary" class="on">Agent summary</button>
-        <button data-view="report">Full report</button>
+  <div id="liveForm">
+    <div class="when">
+      <div class="field"><span>Timeframe</span>
+        <div class="presets" id="presets">
+          <button data-h="1">1 hour</button><button data-h="6">6 hours</button><button data-h="24">24 hours</button>
+          <button data-h="72">3 days</button><button data-h="168" aria-pressed="true">7 days</button>
+        </div>
       </div>
-      <span class="title" id="docTitle"></span>
+      <label class="field"><span>From</span><input type="datetime-local" id="from"></label>
+      <label class="field"><span>To</span><input type="datetime-local" id="to"></label>
+      <div class="utc" id="utcHint"></div>
     </div>
-    <div id="doc"><div class="empty"><div class="big">🩺</div>
-      <p>Run the agent against the live database, or analyse an AWR report file.<br>
-      The agent's summary and the full RAG-rated report appear here.</p></div></div>
-  </section>
-</main>
+
+    <div class="strip">
+      <svg id="strip" role="img" aria-label="AWR snapshot timeline"></svg>
+      <div class="note" id="stripNote">
+        <span><i class="key data"></i>AWR data</span><span><i class="key gap"></i>No AWR data</span>
+        <span><i class="key sel"></i>Your timeframe</span><span>Drag across the strip to choose a timeframe.</span>
+      </div>
+    </div>
+
+    <div class="go">
+      <label class="field"><span>Workload source</span>
+        <select id="workload"><option value="auto" selected>Automatic (AWR on Free)</option>
+          <option value="awr">AWR</option><option value="statspack">Statspack</option></select></label>
+      <label class="field focus"><span>Anything to look at in particular? (optional)</span>
+        <input type="text" id="focus" placeholder="Users reported slow logins around 11:00"></label>
+      <button class="btn run" id="runBtn">Run analysis</button>
+      <button class="btn stop" id="stopBtn" disabled>Stop</button>
+    </div>
+    <p class="aside">The agent reads the alert log, incidents, trace files and AWR for the timeframe through the
+      read-only <code>c##dbmon</code> account, and writes the AWR report(s) it needs. If the container is stopped, it starts it.</p>
+  </div>
+
+  <div id="fileForm" hidden>
+    <div class="filepick">
+      <label class="field"><span>AWR or Statspack report, alert log or trace file</span><select id="file"></select></label>
+      <label class="field upload"><span>Or upload one</span>
+        <input type="file" id="upload" accept=".txt,.html,.htm,.log,.xml,.trc,.lst"></label>
+      <span class="utc" id="upMsg"></span>
+    </div>
+    <div class="go">
+      <button class="btn run" id="runBtnFile">Analyse file</button>
+      <button class="btn stop" id="stopBtnFile" disabled>Stop</button>
+    </div>
+    <p class="aside">For reports from other systems. The database isn't touched: the agent extracts the
+      relevant sections of the file and rates them.</p>
+  </div>
+</section>
+
+<div class="work">
+  <aside class="side">
+    <section>
+      <h2>Run log <span class="count" id="elapsed"></span></h2>
+      <div id="log" aria-live="polite"><p class="quiet">Nothing has run yet.</p></div>
+    </section>
+    <section>
+      <h2>Past reports</h2>
+      <div id="reportList"></div>
+    </section>
+  </aside>
+
+  <main class="main">
+    <div class="sheet">
+      <div class="sheet-head">
+        <div class="views" role="tablist">
+          <button role="tab" data-view="summary" aria-selected="true">Summary</button>
+          <button role="tab" data-view="report" aria-selected="false">Full report</button>
+        </div>
+        <span class="title" id="docTitle"></span>
+      </div>
+      <div id="doc"></div>
+    </div>
+  </main>
+</div>
 
 <script>
 const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
 let mode = "live", view = "summary", job = null, es = null, timer = null;
 let summaryMd = "", summaryMeta = null, reportName = null, reportMd = "";
 
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const pad = n => String(n).padStart(2, "0");
+const toInput = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+const toUtc = d => d.toISOString().slice(0, 16);
+const fmt = d => d.toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+const hm = d => d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
 function md(text) {
-  const html = DOMPurify.sanitize(marked.parse(text || ""));
   const div = document.createElement("div");
   div.className = "md";
-  div.innerHTML = html;
+  div.innerHTML = DOMPurify.sanitize(marked.parse(text || ""));
   div.querySelectorAll("td").forEach(td => {
     const t = td.textContent;
     if (/🔴|\bCRIT\b/.test(t)) td.classList.add("rag-crit");
@@ -214,37 +290,32 @@ function md(text) {
   });
   return div;
 }
-const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
+// ---------- report pane ----------
 function render() {
   const doc = $("#doc");
   doc.innerHTML = "";
-  document.querySelectorAll("#viewTabs button").forEach(b => b.classList.toggle("on", b.dataset.view === view));
+  $$(".views button").forEach(b => b.setAttribute("aria-selected", b.dataset.view === view));
   if (view === "summary") {
     $("#docTitle").textContent = summaryMeta ? summaryMeta.label : "";
     if (!summaryMd) {
-      doc.innerHTML = `<div class="empty"><div class="big">🩺</div><p>${job && !job.done
-        ? "The agent is working. Its summary will appear here when it finishes."
-        : "Run the agent to see its summary here, or pick a past report from the list."}</p></div>`;
+      doc.innerHTML = job && !job.done
+        ? `<div class="empty"><h3>The agent is working</h3><p>Follow it in the run log. Its summary appears here when it finishes, usually in two to four minutes.</p></div>`
+        : `<div class="empty"><h3>No analysis yet</h3><p>Choose a timeframe on the strip above and run the analysis, or open a past report from the list.</p></div>`;
       return;
     }
-    if (summaryMeta) {
-      const b = document.createElement("div");
-      b.className = "banner";
-      b.innerHTML = `<span>Run: <b>${esc(summaryMeta.label)}</b></span>` +
-        (summaryMeta.duration != null ? `<span>Time: <b>${summaryMeta.duration}s</b></span>` : "") +
-        (summaryMeta.turns != null ? `<span>Turns: <b>${summaryMeta.turns}</b></span>` : "") +
-        (summaryMeta.cost != null ? `<span>Cost: <b>$${summaryMeta.cost.toFixed(2)}</b></span>` : "") +
-        (summaryMeta.report ? `<span>Report: <b>${esc(summaryMeta.report)}</b></span>` : "");
-      doc.appendChild(b);
+    if (summaryMeta && summaryMeta.duration != null) {
+      const items = [["Took", `${summaryMeta.duration} s`], ["Turns", summaryMeta.turns],
+        ["Cost", summaryMeta.cost != null ? `$${summaryMeta.cost.toFixed(2)}` : null], ["Report", summaryMeta.report]];
+      doc.insertAdjacentHTML("beforeend", `<dl class="meta">${items.filter(i => i[1] != null)
+        .map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>`);
     }
     doc.appendChild(md(summaryMd));
   } else {
     $("#docTitle").textContent = reportName || "";
-    if (!reportMd) { doc.innerHTML = `<div class="empty"><p>No report selected.</p></div>`; return; }
+    if (!reportMd) { doc.innerHTML = `<div class="empty"><h3>No report open</h3><p>Pick one from Past reports.</p></div>`; return; }
     doc.appendChild(md(reportMd));
   }
-  doc.scrollTop = 0;
 }
 
 async function loadReport(name, switchView = true) {
@@ -256,30 +327,44 @@ async function loadReport(name, switchView = true) {
   render(); refresh();
 }
 
+// "db-diag-demo_dbmon_cdb-20261020-1038.md" -> what it is, where from, when
+function describe(r) {
+  const m = r.name.match(/^db-(diag|health)-(.+)-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})\.md$/);
+  if (!m) return { title: r.name, sub: "" };
+  const when = new Date(+m[3], +m[4] - 1, +m[5], +m[6], +m[7]);
+  const src = m[2];
+  const from = /^demo_/.test(src) ? "live database" : src.replace(/_/g, " ") + " file";
+  return { title: m[1] === "diag" ? "Diagnostic review" : "Health check",
+           sub: `${when.toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}, ${from}` };
+}
+
 async function refresh() {
   const s = await (await fetch("/api/state")).json();
-  const db = s.db, pill = $("#dbPill");
+  const db = s.db;
   const cls = db.state === "running" ? (db.health === "healthy" ? "ok" : "warn") : (db.state === "unknown" ? "crit" : "warn");
-  const txt = db.state === "running" ? `running${db.health ? " · " + db.health : ""}`
-    : db.state === "unknown" ? "docker unavailable" : `${db.state} (agent will start it)`;
-  pill.innerHTML = `<span class="dot ${cls}"></span><span>oracle-free: ${esc(txt)}</span>`;
-  pill.title = db.detail || "";
+  const txt = db.state === "running" ? (db.health === "healthy" ? "oracle-free is running" : `oracle-free is running (${db.health || "starting"})`)
+    : db.state === "unknown" ? "Docker isn't reachable" : `oracle-free is ${db.state}. The agent will start it`;
+  $("#db").innerHTML = `<span class="lamp ${cls}"></span><span>${esc(txt)}</span>`;
+  $("#db").title = db.detail || "";
 
   const list = $("#reportList");
-  list.innerHTML = s.reports.length ? "" : `<div class="hint" style="padding:6px 8px">No reports yet.</div>`;
+  list.innerHTML = s.reports.length ? "" : `<p class="quiet">Reports you run are kept here.</p>`;
   s.reports.forEach(r => {
-    const d = document.createElement("div");
-    d.className = "rep" + (r.name === reportName ? " on" : "");
-    const when = new Date(r.mtime * 1000).toLocaleString([], {month: "short", day: "numeric", hour: "2-digit", minute: "2-digit"});
-    d.innerHTML = `<span class="nm" title="${esc(r.name)}">${r.kind === "diag" ? "🔎" : "🩺"} ${esc(r.name.replace(/\.md$/, ""))}</span>
-      <span class="st">${esc(r.status)} · ${when}</span>`;
-    d.onclick = () => loadReport(r.name);
-    list.appendChild(d);
+    const d = describe(r), rag = (r.status.match(/OK|WARN|CRIT/) || [""])[0];
+    const b = document.createElement("button");
+    b.className = "rep";
+    b.title = r.name;
+    if (r.name === reportName) b.setAttribute("aria-current", "true");
+    b.innerHTML = `<span class="nm">${esc(d.title)}</span>
+      ${rag ? `<span class="rag ${rag.toLowerCase()}"><i class="sq"></i>${rag}</span>` : ""}
+      <span class="sub">${esc(d.sub)}</span>`;
+    b.onclick = () => loadReport(r.name);
+    list.appendChild(b);
   });
 
   const sel = $("#file"), prev = sel.value;
   sel.innerHTML = s.files.map(f => `<option value="${esc(f.path)}">${esc(f.path)} (${(f.size / 1024).toFixed(0)} KB)</option>`).join("")
-    || `<option value="">No files yet: upload one</option>`;
+    || `<option value="">No files yet. Upload one.</option>`;
   if (prev && s.files.some(f => f.path === prev)) sel.value = prev;
 
   if (s.job && !s.job.done && !es) attach(s.job.id, s.job.label);
@@ -287,34 +372,36 @@ async function refresh() {
   return s;
 }
 
-const ICON = { "Bash": "⚙️", "Read": "📄", "Write": "📝", "sqlcl.connect": "🔌", "sqlcl.disconnect": "🔌",
-  "sqlcl.sql_run": "🗄️", "sqlcl.connections_list": "🔌" };
+// ---------- run log ----------
+const KIND = { "Bash": "shell", "Read": "read", "Write": "write", "sqlcl.connect": "connect",
+  "sqlcl.disconnect": "connect", "sqlcl.sql_run": "sql", "sqlcl.connections_list": "connect" };
 
-
-function addEv(t, icon, name, detail, cls = "") {
-  const feed = $("#feed");
-  if (feed.querySelector(".empty")) feed.innerHTML = "";
+function line(t, kind, text, opts = {}) {
+  const log = $("#log");
+  if (log.querySelector(".quiet")) log.innerHTML = "";
   const d = document.createElement("div");
-  d.className = "ev " + cls;
-  d.innerHTML = `<span class="t">${t != null ? t.toFixed(0) + "s" : ""}</span><span class="i">${icon}</span>
-    <span><span class="n">${esc(name)}</span>${detail ? `<div class="d">${esc(detail)}</div>` : ""}</span>`;
-  const stick = feed.scrollTop + feed.clientHeight >= feed.scrollHeight - 30;
-  feed.appendChild(d);
-  if (stick) feed.scrollTop = feed.scrollHeight;
-  return d;
+  d.className = "ln" + (opts.cls ? " " + opts.cls : "");
+  const k = kind === "sql" ? "k sql" : "k";
+  d.innerHTML = `<span class="t">${t != null ? Math.floor(t / 60) + ":" + pad(Math.round(t % 60)) : ""}</span>
+    <span class="${k}">${esc(kind)}</span><span class="d">${opts.code ? `<code>${esc(text)}</code>` : esc(text)}</span>`;
+  const stick = log.scrollTop + log.clientHeight >= log.scrollHeight - 30;
+  log.appendChild(d);
+  if (stick) log.scrollTop = log.scrollHeight;
 }
 
 function setRunning(on) {
-  $("#runBtn").disabled = on; $("#stopBtn").disabled = !on;
+  ["#runBtn", "#runBtnFile"].forEach(id => $(id).disabled = on);
+  ["#stopBtn", "#stopBtnFile"].forEach(id => $(id).disabled = !on);
   $("#runBtn").textContent = on ? "Running…" : "Run analysis";
-  $("#spin").innerHTML = on ? '<span class="spinner"></span>' : "";
+  $("#runBtnFile").textContent = on ? "Running…" : "Analyse file";
   clearInterval(timer);
   const el = $("#elapsed");
   if (on) {
-    const t0 = Date.now(); el.hidden = false;
+    const t0 = Date.now();
+    el.textContent = "running";
     timer = setInterval(() => { const s = Math.round((Date.now() - t0) / 1000);
-      el.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; }, 1000);
-  }
+      el.textContent = `running, ${Math.floor(s / 60)}:${pad(s % 60)}`; }, 1000);
+  } else el.textContent = "";
 }
 
 function attach(id, label) {
@@ -324,21 +411,18 @@ function attach(id, label) {
   es.onmessage = m => {
     const e = JSON.parse(m.data);
     switch (e.kind) {
-      case "start": $("#feed").innerHTML = ""; addEv(e.t, "▶️", e.label, e.prompt); break;
-      case "init": addEv(e.t, e.sqlcl === "connected" ? "✅" : "⚠️", "Agent started",
-        `model ${e.model} · SQLcl MCP ${e.sqlcl}`, e.sqlcl === "connected" ? "" : "err"); break;
-      case "tool": addEv(e.t, ICON[e.name] || "🔧", e.name, e.detail); break;
-      case "tool_result":
-        if (e.error) addEv(e.t, "⛔", (e.name || "tool") + " blocked / failed", e.preview, "err");
-        break;
-      case "text": addEv(e.t, "💬", "Agent", e.text.length > 400 ? e.text.slice(0, 400) + "…" : e.text, "say"); break;
+      case "start": $("#log").innerHTML = ""; line(e.t, "start", e.label); break;
+      case "init": line(e.t, "agent", `Started on ${e.model}. SQLcl MCP ${e.sqlcl}.`, { cls: e.sqlcl === "connected" ? "" : "bad" }); break;
+      case "tool": line(e.t, KIND[e.name] || e.name, e.detail, { code: true }); break;
+      case "tool_result": if (e.error) line(e.t, "blocked", e.preview, { cls: "bad" }); break;
+      case "text": line(e.t, "agent", e.text.length > 300 ? e.text.slice(0, 300) + "…" : e.text); break;
       case "done":
-        addEv(e.t, e.ok ? "🏁" : "⚠️", e.ok ? "Finished" : "Finished with problems: " + e.subtype,
-          e.report ? "Report: reports/" + e.report : "");
+        line(e.t, e.ok ? "done" : "failed", e.ok ? (e.report ? `Wrote reports/${e.report}` : "Finished") : `Stopped early: ${e.subtype}`,
+          { cls: e.ok ? "end" : "bad" });
         summaryMd = e.result; summaryMeta = { label, ...e }; view = "summary";
         if (e.report) loadReport(e.report, false); else render();
         break;
-      case "error": addEv(e.t, "❌", "Error", e.text, "err"); break;
+      case "error": line(e.t, "error", e.text, { cls: "bad" }); break;
     }
   };
   es.addEventListener("end", () => { es.close(); es = null; job.done = true; setRunning(false); refresh(); render(); loadCoverage(true); });
@@ -346,93 +430,162 @@ function attach(id, label) {
   summaryMd = ""; summaryMeta = { label }; view = "summary"; render();
 }
 
-// ---------- timeframe ----------
-// The inputs are in the browser's local time; the agent and the DB work in UTC.
-let coverage = null, covTried = 0;
-const pad = n => String(n).padStart(2, "0");
-const toInput = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-const toUtc = d => d.toISOString().slice(0, 16);
-const fmt = d => d.toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+// ---------- timeframe and strip chart ----------
+// Inputs are in the browser's local time; the agent and the DB work in UTC.
+let coverage = null, covTried = 0, preset = 168;
 
 function windowDates() {
   const f = new Date($("#from").value), t = new Date($("#to").value);
   return isNaN(f) || isNaN(t) ? null : [f, t];
 }
-
-function applyPreset() {
-  const h = $("#preset").value;
-  if (h === "custom") return;
-  const to = new Date(); to.setSeconds(0, 0);
-  $("#from").value = toInput(new Date(to - h * 3600e3)); $("#to").value = toInput(to);
+function setWindow(f, t, keepPreset = false) {
+  $("#from").value = toInput(f); $("#to").value = toInput(t);
+  if (!keepPreset) preset = null;
   updateWindow();
 }
-
+function applyPreset() {
+  if (!preset) return;
+  const to = new Date(); to.setSeconds(0, 0);
+  setWindow(new Date(to - preset * 3600e3), to, true);
+}
 function updateWindow() {
+  $$("#presets button").forEach(b => b.setAttribute("aria-pressed", +b.dataset.h === preset));
   const w = windowDates();
-  $("#utcHint").textContent = !w ? "Pick a start and an end."
-    : w[0] >= w[1] ? "The end must be after the start."
-    : `= ${toUtc(w[0]).replace("T", " ")} → ${toUtc(w[1]).replace("T", " ")} UTC (the database clock)`;
-  renderCoverage();
+  $("#utcHint").textContent = !w ? "Choose a start and an end."
+    : w[0] >= w[1] ? "The end has to be after the start."
+    : `${toUtc(w[0]).replace("T", " ")} to ${toUtc(w[1]).slice(11)}${toUtc(w[0]).slice(0, 10) === toUtc(w[1]).slice(0, 10) ? "" : " on " + toUtc(w[1]).slice(0, 10)} UTC, the database clock`;
+  drawStrip();
 }
 
-function renderCoverage() {
-  const el = $("#coverage"), c = coverage;
-  if (!c) return;
-  if (!c.available) { el.innerHTML = `<span class="hint">AWR coverage: ${esc(c.reason)}</span>`; return; }
-  const w = windowDates();
-  // Same overlap rule as awr_window_pairs: a startup needs 2+ snapshots, spanning past the window edges.
-  const segs = c.segments.map(s => ({ ...s, f: new Date(s.first + "Z"), l: new Date(s.last + "Z") })).reverse();
-  const hit = s => w && s.snaps > 1 && s.l > w[0] && s.f < w[1];
-  el.innerHTML = segs.length
-    ? "AWR snapshots exist for (click one to use it):<br>" + segs.map((s, i) =>
-        `<button class="seg${hit(s) ? " hit" : ""}" data-i="${i}" title="instance startup ${esc(s.startup)} UTC · ${s.snaps} snapshot(s)">` +
-        `${fmt(s.f)} → ${fmt(s.l)}</button>`).join("") +
-      (w && !segs.some(hit) ? `<div class="warn">No AWR snapshots in this timeframe. The agent will still review the alert log, incidents and traces.</div>` : "")
-    : `<span class="warn">No AWR snapshots yet.</span>`;
-  el.querySelectorAll(".seg").forEach(b => b.onclick = () => {
-    const s = segs[+b.dataset.i];
-    $("#preset").value = "custom";
-    $("#from").value = toInput(s.f); $("#to").value = toInput(s.l);
-    updateWindow();
+const segsOf = c => (c && c.available ? c.segments : []).map(s => ({
+  ...s, f: new Date(s.first + "Z"), l: new Date(s.last + "Z"), up: new Date(s.startup + "Z"),
+  ticks: (s.times || []).map(x => new Date(x + "Z")) }));
+// Same overlap rule as awr_window_pairs: a startup needs 2+ snapshots reaching past the window edges.
+const usable = (s, w) => w && s.snaps > 1 && s.l > w[0] && s.f < w[1];
+
+let scale = null;
+function drawStrip() {
+  const svg = $("#strip"), W = svg.clientWidth || 800, H = 104;
+  const segs = segsOf(coverage), w = windowDates();
+  const end = new Date(); end.setMinutes(0, 0, 0); end.setHours(end.getHours() + 1);
+  // From just before the oldest snapshot (AWR keeps 8 days) to now, so the data fills the strip
+  const oldest = segs.length ? segs[0].f.getTime() - 12 * 3600e3 : end - 2 * 86400e3;
+  let start = new Date(Math.max(end - 8 * 86400e3, Math.min(oldest, end - 86400e3)));
+  start.setMinutes(0, 0, 0);
+  if (w && w[0] < start) start = new Date(w[0].getTime() - 3600e3);
+  const L = 6, R = W - 6, x = d => L + (d - start) / (end - start) * (R - L);
+  scale = { start, end, L, R };
+  const top = 22, trackH = 46, base = top + trackH;
+  let g = `<defs><pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="1" height="6" fill="var(--hatch)"/></pattern></defs>`;
+  g += `<rect x="${L}" y="${top}" width="${R - L}" height="${trackH}" fill="url(#hatch)"/>`;
+  // day lines and labels (local midnight), 6-hour ticks
+  const d0 = new Date(start); d0.setHours(0, 0, 0, 0);
+  for (let d = new Date(d0); d <= end; d.setHours(d.getHours() + 6)) {
+    if (d < start) continue;
+    const X = x(d), day = d.getHours() === 0;
+    g += `<line x1="${X}" x2="${X}" y1="${day ? top : base - 6}" y2="${base + (day ? 8 : 0)}" stroke="${day ? "var(--ink-3)" : "var(--rule)"}" stroke-width="1"/>`;
+    if (day && R - X > 46)
+      g += `<text x="${X + 4}" y="${H - 8}" font-size="12.5" fill="var(--ink-2)">${d.toLocaleDateString([], { weekday: "short", day: "numeric" })}</text>`;
+  }
+  // AWR coverage per startup: wash between first and last snapshot, a tick per snapshot
+  segs.forEach(s => {
+    const a = Math.max(x(s.f), L), b = Math.min(x(s.l), R);
+    if (b > a) g += `<rect x="${a}" y="${top}" width="${Math.max(b - a, 2)}" height="${trackH}" fill="var(--sheet)"/>
+      <rect x="${a}" y="${top}" width="${Math.max(b - a, 2)}" height="${trackH}" fill="var(--signal-wash)"/>`;
+    s.ticks.forEach(t => { const X = x(t); if (X >= L && X <= R)
+      g += `<line x1="${X}" x2="${X}" y1="${base - 12}" y2="${base}" stroke="var(--signal)" stroke-width="1.4"/>`; });
+    const U = x(s.up);
+    if (U >= L && U <= R) g += `<line x1="${U}" x2="${U}" y1="${top - 4}" y2="${base}" stroke="var(--ink-2)" stroke-width="1.2" stroke-dasharray="3 2"/>
+      <text x="${U + 3}" y="${top - 7}" font-size="11.5" fill="var(--ink-2)">restart</text>
+      <title>Instance started ${fmt(s.up)}, ${s.snaps} snapshot(s)</title>`;
   });
+  g += `<line x1="${L}" x2="${R}" y1="${base}" y2="${base}" stroke="var(--ink-3)" stroke-width="1"/>`;
+  // the selection
+  if (w && w[1] > w[0]) {
+    const a = Math.max(x(w[0]), L), b = Math.min(x(w[1]), R);
+    g += `<rect x="${a}" y="${top - 2}" width="${Math.max(b - a, 2)}" height="${trackH + 2}" fill="var(--signal)" fill-opacity=".22"/>
+      <line x1="${a}" x2="${a}" y1="${top - 4}" y2="${base + 2}" stroke="var(--signal)" stroke-width="2"/>
+      <line x1="${b}" x2="${b}" y1="${top - 4}" y2="${base + 2}" stroke="var(--signal)" stroke-width="2"/>`;
+  }
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.innerHTML = g;
+
+  const note = $("#stripNote");
+  note.querySelector(".warnline")?.remove();
+  let msg = "";
+  if (coverage && !coverage.available) msg = coverage.reason.charAt(0).toUpperCase() + coverage.reason.slice(1) + ".";
+  else if (coverage && w && w[1] > w[0] && !segs.some(s => usable(s, w)))
+    msg = "No AWR snapshots in this timeframe. The agent will still check the alert log, incidents and traces.";
+  if (msg) note.insertAdjacentHTML("beforeend", `<span class="warnline">${esc(msg)}</span>`);
 }
+
+// drag on the strip to choose a timeframe; a click without a drag picks that startup's whole range
+(() => {
+  const svg = $("#strip");
+  let down = null;
+  const at = ev => {
+    const r = svg.getBoundingClientRect(), { start, end, L, R } = scale;
+    const px = Math.min(Math.max(ev.clientX - r.left, L), R);
+    const t = new Date(start.getTime() + (px - L) / (R - L) * (end - start));
+    t.setMinutes(Math.round(t.getMinutes() / 15) * 15, 0, 0);
+    return t;
+  };
+  svg.addEventListener("pointerdown", ev => { down = { x: ev.clientX, t: at(ev) }; svg.setPointerCapture(ev.pointerId); });
+  svg.addEventListener("pointermove", ev => {
+    if (!down || Math.abs(ev.clientX - down.x) < 4) return;
+    const t = at(ev);
+    setWindow(t < down.t ? t : down.t, t < down.t ? down.t : t);
+  });
+  svg.addEventListener("pointerup", ev => {
+    if (down && Math.abs(ev.clientX - down.x) < 4) {
+      const t = at(ev), s = segsOf(coverage).find(s => s.snaps > 1 && t >= s.f && t <= s.l);
+      if (s) setWindow(s.f, s.l);
+    }
+    down = null;
+  });
+  new ResizeObserver(drawStrip).observe(svg);
+})();
 
 async function loadCoverage(force = false) {
   covTried = Date.now();
   try { coverage = await (await fetch("/api/coverage" + (force ? "?refresh" : ""))).json(); }
-  catch { coverage = { available: false, reason: "server unreachable" }; }
-  renderCoverage();
+  catch { coverage = { available: false, reason: "the server can't be reached" }; }
+  drawStrip();
 }
 
-$("#preset").onchange = applyPreset;
-["#from", "#to"].forEach(id => $(id).oninput = () => { $("#preset").value = "custom"; updateWindow(); });
+$$("#presets button").forEach(b => b.onclick = () => { preset = +b.dataset.h; applyPreset(); });
+["#from", "#to"].forEach(id => $(id).oninput = () => { preset = null; updateWindow(); });
 
-$("#runBtn").onclick = async () => {
+// ---------- run ----------
+async function run() {
   let body, label;
   if (mode === "live") {
-    applyPreset();  // "last N hours" means up to now, not up to when the page loaded
+    applyPreset();  // "last 6 hours" means up to now, not up to when the page loaded
     const w = windowDates();
     if (!w || w[0] >= w[1]) return alert("Choose a timeframe with the end after the start.");
     body = { mode, from: toUtc(w[0]), to: toUtc(w[1]), workload: $("#workload").value, focus: $("#focus").value };
-    label = `Live review · ${fmt(w[0])} → ${fmt(w[1])} · ${body.workload}`;
+    label = `Live database, ${fmt(w[0])} to ${w[0].toDateString() === w[1].toDateString() ? hm(w[1]) : fmt(w[1])}`;
   } else {
     body = { mode, path: $("#file").value };
     if (!body.path) return alert("Upload or choose a file first.");
-    label = `File · ${body.path.split("/").pop()}`;
+    label = `File ${body.path.split("/").pop()}`;
   }
   const r = await fetch("/api/run", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body) });
   const j = await r.json();
-  if (!r.ok) return alert(j.error || "Could not start the run");
+  if (!r.ok) return alert(j.error || "The run didn't start.");
   attach(j.id, label);
-};
-$("#stopBtn").onclick = () => fetch("/api/stop", { method: "POST" });
+}
+$("#runBtn").onclick = run; $("#runBtnFile").onclick = run;
+$("#stopBtn").onclick = $("#stopBtnFile").onclick = () => fetch("/api/stop", { method: "POST" });
 
-document.querySelectorAll("#modeTabs button").forEach(b => b.onclick = () => {
+$$(".modes button").forEach(b => b.onclick = () => {
   mode = b.dataset.mode;
-  document.querySelectorAll("#modeTabs button").forEach(x => x.classList.toggle("on", x === b));
+  $$(".modes button").forEach(x => x.setAttribute("aria-pressed", x === b));
   $("#liveForm").hidden = mode !== "live"; $("#fileForm").hidden = mode !== "file";
+  if (mode === "live") drawStrip();
 });
-document.querySelectorAll("#viewTabs button").forEach(b => b.onclick = () => { view = b.dataset.view; render(); });
+$$(".views button").forEach(b => b.onclick = () => { view = b.dataset.view; render(); });
 
 $("#upload").onchange = async ev => {
   const f = ev.target.files[0]; if (!f) return;
@@ -440,11 +593,12 @@ $("#upload").onchange = async ev => {
   const r = await fetch("/api/upload", { method: "POST", headers: { "X-Filename": f.name }, body: f });
   const j = await r.json();
   if (!r.ok) { $("#upMsg").textContent = j.error; return; }
-  $("#upMsg").textContent = "Uploaded ✓";
+  $("#upMsg").textContent = `Uploaded ${f.name}.`;
   await refresh(); $("#file").value = j.path;
 };
 
 applyPreset();
+render();
 refresh();
 loadCoverage();
 setInterval(() => { if (!es) refresh(); }, 10000);

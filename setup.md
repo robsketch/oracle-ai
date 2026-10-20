@@ -858,15 +858,17 @@ This must exit 2.
 A local browser UI for the demo. It runs the agent headless
 (`claude -p --agent awr-analyst --output-format stream-json`) in the project folder, so it
 gets the same skill, SQLcl MCP server and guard hook as the CLI, and streams each step to the
-page. Standard-library Python with nothing to install. `marked` and `DOMPurify` are vendored
-in `webui/static/`, so it works offline.
+page. Standard-library Python with nothing to install. `marked`, `DOMPurify` and the fonts
+(Barlow, Barlow Semi Condensed, JetBrains Mono as woff2) are vendored in `webui/static/`, so
+it works offline.
 
 - **Live database:** a timeframe (presets such as "last 6 hours", or a custom From/To in the
   browser's local time, sent to the agent as UTC `from=`/`to=`), workload source
   (auto/AWR/Statspack) and an optional focus note. The agent picks the AWR snapshot pair(s)
   covering the timeframe (`awr_window_pairs`, one per instance startup) and generates the AWR
-  report(s) itself, so nobody has to choose report files. Under the picker, `/api/coverage`
-  lists the periods that have AWR snapshots (click one to use it). It checks the edition first and
+  report(s) itself, so nobody has to choose report files. Below the picker, a timeline strip
+  draws every AWR snapshot, instance restart and gap from `/api/coverage`. Drag across it to
+  choose a timeframe, or click a data period to use all of it. It checks the edition first and
   queries `DBA_HIST_SNAPSHOT` only on Free. The preflight starts `oracle-free` if it's down.
 - **Analyse a report file:** pick a file in `reports/awr/` or upload one. Uploads go to
   `reports/uploads/` (`.txt .html .htm .log .xml .trc .lst`, 60 MB max).
@@ -880,8 +882,7 @@ python3 webui/server.py            # http://localhost:8765 (PORT=9000 to change)
 ```
 From Windows, open `http://localhost:8765` in a browser (WSL2 forwards localhost).
 
-**Done when:** the page shows the `oracle-free` status pill and an "AWR snapshots exist for"
-line, and a file-mode run on `reports/awr/awr_4_5.txt` ends with "Finished" and opens a new
+**Done when:** the page shows the `oracle-free` status and a timeline strip with snapshot ticks, and a file-mode run on `reports/awr/awr_4_5.txt` ends with "Finished" and opens a new
 `reports/db-diag-awr_4_5-*.md`.
 
 ---
@@ -1066,7 +1067,9 @@ rm -rf ~/.local/opt/java ~/.local/opt/jdk-21* ~/.local/opt/sqlcl
 - Skill/agent take `from=YYYY-MM-DDTHH:MM to=...` (UTC). `days=N` still works.
 - Gotcha: SQLcl sessions run in `Europe/London`, so time literals must carry `+00:00`
   (AWR/Statspack times are plain UTC, compared through `sys_extract_utc`).
-- Web UI: timeframe presets + custom From/To, UTC echo, AWR coverage chips (`/api/coverage`).
+- Web UI: timeframe presets + custom From/To, UTC echo, and a draggable AWR snapshot timeline
+  (`/api/coverage`). Restyled at the same time: vendored Barlow/JetBrains Mono fonts, AWR-blue
+  accent, light and dark themes.
 - Tested every changed check against `demo_dbmon_cdb`/`demo_dbmon` with a mid-day window (pair
   4→8 FULL), a window across the 16→19 Oct restart (two PARTIAL pairs), a gap (no rows) and
   `days=7`.

@@ -32,11 +32,11 @@ CLAUDE = shutil.which("claude")
 AGENT = "awr-analyst"
 MAX_UPLOAD = 60 * 1024 * 1024
 UPLOAD_EXT = {".txt", ".html", ".htm", ".log", ".xml", ".trc", ".lst"}
-STATIC = {
-    "/": ("index.html", "text/html; charset=utf-8"),
-    "/static/marked.min.js": ("static/marked.min.js", "text/javascript"),
-    "/static/purify.min.js": ("static/purify.min.js", "text/javascript"),
-}
+STATIC = {"/": ("index.html", "text/html; charset=utf-8")}
+STATIC_TYPES = {".js": "text/javascript", ".woff2": "font/woff2"}
+for _p in (WEBUI / "static").iterdir():
+    if _p.suffix in STATIC_TYPES:
+        STATIC[f"/static/{_p.name}"] = (f"static/{_p.name}", STATIC_TYPES[_p.suffix])
 REPORT_RE = re.compile(r"reports/(db-(?:diag|health)-[\w.-]+\.md)")
 WINDOW_FMT = "%Y-%m-%dT%H:%M"  # from/to as sent by the UI and passed to the agent, UTC
 MAX_WINDOW_DAYS = 31
@@ -54,14 +54,11 @@ COVERAGE_SQL = """set feedback off
 set sqlformat csv
 select /* db-diag-review */
        to_char(startup_time, 'YYYY-MM-DD"T"HH24:MI:SS') as startup_utc,
-       to_char(min(end_interval_time), 'YYYY-MM-DD"T"HH24:MI:SS') as first_snap_utc,
-       to_char(max(end_interval_time), 'YYYY-MM-DD"T"HH24:MI:SS') as last_snap_utc,
-       count(*) as snaps
+       to_char(end_interval_time, 'YYYY-MM-DD"T"HH24:MI:SS') as snap_utc
 from dba_hist_snapshot
 where dbid = (select dbid from v$database)
   and instance_number = (select instance_number from v$instance)
-group by startup_time
-order by startup_time;
+order by snap_id;
 """
 COVERAGE_TTL = 120
 _coverage = {"at": 0, "data": None}
@@ -163,9 +160,14 @@ def awr_coverage(force=False):
             data = {"available": False, "edition": edition,
                     "reason": f"edition {edition}: AWR needs the Diagnostics Pack, so the agent uses Statspack"}
         else:
-            rows = [ln.replace('"', "").split(",") for ln in run_sql(COVERAGE_SQL).splitlines()[1:] if ln.strip()]
+            segs = {}
+            for ln in run_sql(COVERAGE_SQL).splitlines()[1:]:
+                if ln.strip():
+                    startup, snap = ln.replace('"', "").split(",")
+                    segs.setdefault(startup, []).append(snap)
             data = {"available": True, "edition": edition,
-                    "segments": [{"startup": s, "first": f, "last": l, "snaps": int(n)} for s, f, l, n in rows]}
+                    "segments": [{"startup": k, "first": v[0], "last": v[-1], "snaps": len(v), "times": v}
+                                 for k, v in segs.items()]}
     except (RuntimeError, OSError, subprocess.TimeoutExpired, ValueError) as e:
         return {"available": False, "reason": f"could not read AWR coverage: {e}"}
     _coverage.update(at=time.time(), data=data)
